@@ -103,7 +103,7 @@ def build_ytdlp_cmd(
 def run_cmd(cmd: List[str]) -> int:
     try:
         # Let yt-dlp print directly to stdout/stderr
-        proc = subprocess.run(cmd, stdout=sys.stdout, stderr=sys.stderr)
+        proc = subprocess.run(cmd, check=False) # Changed to not raise on non-zero exit
         return proc.returncode
     except FileNotFoundError:
         eprint("yt-dlp not found. Make sure it is installed in the image.")
@@ -145,6 +145,76 @@ def download_track(
     rc = run_cmd(cmd)
     return (rc == 0, url)
 
+def process_playlist(
+    playlist_path: Path,
+    out_root: Path,
+    args: argparse.Namespace,
+) -> Tuple[int, int]:
+    """
+    Processes a single playlist file: loads tracks, downloads them, and reports results.
+    Returns a tuple of (success_count, failure_count).
+    """
+    pl = load_playlist(playlist_path)
+    if not pl:
+        return 0, 0
+
+    playlist_name = pl.get("name", playlist_path.stem)
+    log(f"\n>>> Processing playlist: {playlist_name}")
+
+    urls: List[str] = []
+    for t in pl.get("tracks", []):
+        url = t.get("url")
+        if not url:
+            vid = t.get("videoId")
+            if vid and re.fullmatch(r"[A-Za-z0-9_-]{11}", str(vid)):
+                url = f"https://www.youtube.com/watch?v={vid}"
+        if url:
+            urls.append(url)
+
+    if not urls:
+        log(f"No tracks found in playlist: {playlist_name}")
+        return 0, 0
+
+    log(f"Found {len(urls)} tracks. Starting downloads with concurrency={args.concurrency}...")
+
+    failures: List[str] = []
+    with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
+        futs = {
+            ex.submit(
+                download_track,
+                url=url,
+                output_dir=out_root,
+                audio_format=args.audio_format,
+                audio_quality=args.quality,
+                cookies=args.cookies,
+                rate_limit=args.rate_limit,
+                sleep=args.sleep,
+                prefer_youtube_music=args.prefer_youtube_music,
+                dry_run=args.dry_run,
+            ): url
+            for url in urls
+        }
+
+        iterator = as_completed(futs)
+        if tqdm:
+            iterator = tqdm(iterator, total=len(futs), desc=f"Downloading '{playlist_name}'", unit="song", leave=False)
+
+        for f in iterator:
+            ok, url = f.result()
+            if not ok:
+                failures.append(url)
+
+    success_count = len(urls) - len(failures)
+    log(f"Playlist '{playlist_name}' summary: {success_count} downloaded, {len(failures)} failed.")
+
+    if failures:
+        eprint(f"  [FAILURES] for '{playlist_name}':")
+        for url in failures:
+            eprint(f"    - {url}")
+
+    return success_count, len(failures)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Download YouTube Music playlists from a Google Takeout.")
     ap.add_argument("takeout_path", help="Path to folder containing Takeout JSON and/or CSV files")
@@ -169,65 +239,28 @@ def main() -> int:
         eprint(f"[ERROR] Path not found: {takeout_path}")
         return 2
 
-    # Gather URLs from JSON playlists
+    # Gather and process playlists one by one
     json_paths = find_json_playlists(takeout_path)
     if not json_paths:
-        eprint("No JSON files found in the provided path.")
+        eprint("No JSON playlist files found in the provided path.")
         return 1
 
-    urls: List[str] = []
-    for jp in json_paths:
-        pl = load_playlist(jp)
-        if not pl:
-            continue
-        for t in pl.get("tracks", []):
-            url = t.get("url")
-            if not url:
-                vid = t.get("videoId")
-                if vid and re.fullmatch(r"[A-Za-z0-9_-]{11}", str(vid)):
-                    url = f"https://www.youtube.com/watch?v={vid}"
-            if url:
-                urls.append(url)
+    log(f"Found {len(json_paths)} JSON playlist(s) to process.")
+    total_success = 0
+    total_failures = 0
 
-    if not urls:
-        eprint("No tracks to process.")
-        return 1
+    for jp in sorted(json_paths):
+        s, f = process_playlist(jp, out_root, args)
+        total_success += s
+        total_failures += f
 
-    log(f"Found {len(urls)} tracks. Starting downloads with concurrency={args.concurrency} ...")
-
-    failures: List[str] = []
-    with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
-        futs = {
-            ex.submit(
-                download_track,
-                url=url,
-                output_dir=out_root,
-                audio_format=args.audio_format,
-                audio_quality=args.quality,
-                cookies=args.cookies,
-                rate_limit=args.rate_limit,
-                sleep=args.sleep,
-                prefer_youtube_music=args.prefer_youtube_music,
-                dry_run=args.dry_run,
-            ): url
-            for url in urls
-        }
-        
-        iterator = as_completed(futs)
-        if tqdm:
-            iterator = tqdm(iterator, total=len(futs), desc="Downloading", unit="song")
-
-        for f in iterator:
-            ok, url = f.result()
-            if not ok:
-                failures.append(url)
-
-    if failures:
-        eprint(f"\n[DONE] Completed with {len(failures)} failures.")
-        for url in failures:
-            eprint(f"  - {url}")
+    log("\n" + "="*40)
+    if total_failures > 0:
+        eprint(f"\n[DONE] Completed with {total_failures} total failure(s).")
     else:
         log("\n[DONE] All downloads completed successfully.")
+    log(f"Total tracks downloaded: {total_success}")
+    log("="*40)
 
     if args.write_m3u:
         try:
@@ -235,7 +268,7 @@ def main() -> int:
         except Exception as e:
             eprint(f"[WARN] Failed to write M3U playlists: {e}")
 
-    return 0 if not failures else 1
+    return 0 if total_failures == 0 else 1
 
 def write_m3u_from_library(library_root: Path) -> None:
     pl_dir = library_root / "_playlists"

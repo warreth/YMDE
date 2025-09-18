@@ -164,11 +164,8 @@ def find_existing_file(vid: str, library_root: Path) -> Optional[Path]:
     return None
 
 def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[Path]) -> None:
-    pl_dir = library_root / "_playlists"
-    pl_dir.mkdir(parents=True, exist_ok=True)
-    
     safe_name = re.sub(r'[\\/*?:"<>|]', "_", playlist_name)
-    m3u_path = pl_dir / f"{safe_name}.m3u8"
+    m3u_path = library_root / f"{safe_name}.m3u8"
 
     sorted_files = sorted(files, key=lambda p: p.name.lower())
 

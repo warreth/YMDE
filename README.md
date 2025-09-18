@@ -1,7 +1,6 @@
 # YMDE (YouTube Music Downloader and Exporter)
 
 This container:
-
 - Scans your Google Takeout JSON playlists (from YouTube/YouTube Music).
 - Also converts CSV playlists to the same JSON format.
 - Downloads audio for each track using `yt-dlp`.
@@ -13,9 +12,9 @@ Note: Use this tool only in ways permitted by YouTube’s Terms of Service and y
 
 ## Quick Start
 
-1. **Prerequisites**: Docker and Docker Compose must be installed.
+1.  **Prerequisites**: Docker and Docker Compose must be installed.
 
-2. **Setup Folders**: Create `data` and `library` directories next to your `compose.yml` file.
+2.  **Setup Folders**: Create `data` and `library` directories next to your `compose.yml` file.
 
     ```bash
     mkdir -p data library
@@ -24,19 +23,19 @@ Note: Use this tool only in ways permitted by YouTube’s Terms of Service and y
     - Place your Takeout JSON and/or CSV files in `./data`.
     - If needed for private or age-gated content, save your browser cookies as `./data/cookies.txt` (Netscape format).
 
-3. **Build the Image**:
+3.  **Build the Image**:
 
     ```bash
     docker compose build
     ```
 
-4. **Run the Downloader**:
+4.  **Run the Downloader**:
 
     ```bash
     docker compose run --rm ymde
     ```
 
-5. **Check the Results**:
+5.  **Check the Results**:
     - Your audio files will be in `./library`.
     - Playlists, if enabled, will be in `./library/_playlists/*.m3u8`.
 
@@ -47,13 +46,12 @@ Edit `compose.yml` to change the default settings via environment variables:
 - `AUDIO_FORMAT`: `m4a` (default) or `mp3`.
 - `QUALITY`: For `mp3`, this is the VBR quality from `0` (best) to `9` (worst). Default is `0`.
 - `CONCURRENCY`: Number of parallel downloads (e.g., `4`).
-- `WRITE_M3U`: `1` to create an M3U8 playlist file for each of your original Takeout/CSV playlists.
+- `WRITE_M3U`: `1` to create M3U8 playlists from the downloaded folder structure (one per album).
 - `PREFER_YOUTUBE_MUSIC`: `1` to rewrite YouTube video URLs to `music.youtube.com` for better metadata.
 - `RATE_LIMIT`: Download speed limit, e.g., `1M`. To prevent IP bans, this is automatically set to `500K` if you are not using cookies. You can set it to `""` to disable the limit or choose your own value.
 - `SLEEP`: A fixed or random delay between downloads, e.g., `5` or `2,8` (for 2-8 seconds).
 - `DRY_RUN`: `1` to simulate the process without downloading files.
 - `COOKIES`: Path to a cookies file inside the container (default: `/data/cookies.txt`).
-- `VERBOSE`: `1` to show detailed, prefixed `yt-dlp` logs for each song instead of a progress bar. Default is `0`.
 
 ## Alternative: `docker run` (without Compose)
 

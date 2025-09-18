@@ -19,7 +19,6 @@ services:
       SLEEP: "1,3"                  # random sleep low,high seconds (empty to disable)
       DRY_RUN: "0"                  # 1=dry-run
       COOKIES: "/data/cookies.txt"  # optional; file must exist if set
-      VERBOSE: "0"                  # 1=show all yt-dlp logs, 0=show progress bar
 
     volumes:
       - ./data:/data

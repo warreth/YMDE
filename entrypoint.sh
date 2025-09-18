@@ -18,7 +18,6 @@ PREFER_YOUTUBE_MUSIC="${PREFER_YOUTUBE_MUSIC:-1}"
 CONCURRENCY="${CONCURRENCY:-2}"
 WRITE_M3U="${WRITE_M3U:-1}"
 DRY_RUN="${DRY_RUN:-0}"
-VERBOSE="${VERBOSE:-0}"
 
 ARGS=()
 ARGS+=("$TAKEOUT_PATH" "-o" "$OUTPUT_DIR" "--audio-format" "$AUDIO_FORMAT" "--quality" "$QUALITY" "--concurrency" "$CONCURRENCY")
@@ -51,8 +50,9 @@ fi
 if [[ "$DRY_RUN" == "1" ]]; then
   ARGS+=("--dry-run")
 fi
-if [[ "$VERBOSE" == "1" ]]; then
-  ARGS+=("--verbose")
+
+echo "Running: python /app/ytm_takeout_downloader.py ${ARGS[*]}"
+exec python /app/ytm_takeout_downloader.py "${ARGS[@]}"
 fi
 
 echo "Running: python /app/ytm_takeout_downloader.py ${ARGS[*]}"

@@ -15,15 +15,29 @@ try:
 except ImportError:
     tqdm = None
 
-def log(msg: str) -> None:
-    print(msg, flush=True)
+# Global ARGS placeholder, to be initialized in main()
+ARGS: Optional[argparse.Namespace] = None
+
+def log(msg: str, force: bool = False) -> None:
+    # In verbose mode, always print. Otherwise, only print if forced.
+    if (ARGS and ARGS.verbose) or force:
+        print(msg, flush=True)
 
 def eprint(msg: str) -> None:
-    print(msg, file=sys.stderr, flush=True)
+    # In verbose mode, tqdm is not active, so just print.
+    # Otherwise, use tqdm.write to avoid interfering with the progress bar.
+    if ARGS and ARGS.verbose:
+        print(msg, file=sys.stderr, flush=True)
+    elif tqdm:
+        tqdm.write(msg, file=sys.stderr)
+    else:
+        print(msg, file=sys.stderr, flush=True)
+
 
 def get_video_id(url: str) -> Optional[str]:
     m = re.search(r"(?:youtube\.com|youtu\.be).*?([A-Za-z0-9_-]{11})", url)
     return m.group(1) if m else None
+
 
 def find_json_playlists(root: Path) -> List[Path]:
     return [p for p in root.rglob("*.json") if p.is_file()]
@@ -105,19 +119,35 @@ def build_ytdlp_cmd(
     cmd.append(u)
     return cmd
 
-def run_cmd(cmd: List[str]) -> Tuple[int, str]:
+def run_cmd(cmd: List[str], verbose: bool) -> Tuple[int, str]:
     try:
-        # Let yt-dlp print directly to stdout/stderr, but capture final filename
-        proc = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8")
-        if proc.returncode != 0:
-            eprint(f"[yt-dlp stderr] {proc.stderr.strip()}")
-        return proc.returncode, proc.stdout.strip()
+        if verbose:
+            # Stream output in real-time
+            log(f"Running command: {' '.join(cmd)}", force=True)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8")
+            output_lines = []
+            if proc.stdout:
+                for line in iter(proc.stdout.readline, ""):
+                    line = line.strip()
+                    print(f"  [yt-dlp] {line}")
+                    if line.startswith("after_move:"):
+                        output_lines.append(line.split(":", 1)[1].strip())
+            proc.wait()
+            final_path = output_lines[-1] if output_lines else ""
+            return proc.returncode, final_path
+        else:
+            # Capture output for progress bar mode
+            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8")
+            if proc.returncode != 0:
+                eprint(f"[yt-dlp stderr] {proc.stderr.strip()}")
+            return proc.returncode, proc.stdout.strip()
     except FileNotFoundError:
         eprint("yt-dlp not found. Make sure it is installed in the image.")
         return 127, ""
     except Exception as e:
         eprint(f"[ERR] Failed to run yt-dlp: {e}")
         return 1, ""
+
 
 def download_track(
     url: str,
@@ -130,6 +160,7 @@ def download_track(
     sleep: Optional[str],
     prefer_youtube_music: bool,
     dry_run: bool,
+    verbose: bool,
 ) -> Tuple[bool, str, Optional[str], Optional[Path]]:
     # Use yt-dlp’s own metadata for naming
     outtmpl = str(
@@ -149,7 +180,7 @@ def download_track(
         prefer_music=prefer_youtube_music,
         dry_run=dry_run,
     )
-    rc, final_path_str = run_cmd(cmd)
+    rc, final_path_str = run_cmd(cmd, verbose=verbose)
     vid = get_video_id(url)
     
     final_path = Path(final_path_str) if final_path_str and rc == 0 else None
@@ -175,7 +206,7 @@ def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[P
             for p in sorted_files:
                 rel_path = p.relative_to(library_root)
                 f.write(str(rel_path).replace("\\", "/") + "\n")
-        log(f"[M3U] Wrote playlist: {m3u_path}")
+        log(f"[M3U] Wrote playlist: {m3u_path}", force=True)
     except Exception as e:
         eprint(f"[WARN] Failed to write M3U playlist {m3u_path}: {e}")
 
@@ -222,12 +253,12 @@ def process_playlist(
                     playlist_track_files.append(downloaded_vids[vid])
 
     if not urls_to_download:
-        log(f"No new tracks to download in playlist: {playlist_name}")
+        log(f"No new tracks to download in playlist: {playlist_name}", force=True)
         if args.write_m3u and playlist_track_files:
             write_m3u_for_playlist(out_root, playlist_name, playlist_track_files)
         return 0, 0
 
-    log(f"Found {len(urls_to_download)} new tracks. Starting downloads with concurrency={args.concurrency}...")
+    log(f"Found {len(urls_to_download)} new tracks. Starting downloads with concurrency={args.concurrency}...", force=True)
 
     failures: List[str] = []
     with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
@@ -244,26 +275,36 @@ def process_playlist(
                 sleep=args.sleep,
                 prefer_youtube_music=args.prefer_youtube_music,
                 dry_run=args.dry_run,
+                verbose=args.verbose,
             ): url
             for url in urls_to_download
         }
 
+        # Only show progress bar if not in verbose mode
         iterator = as_completed(futs)
-        if tqdm:
+        if tqdm and not args.verbose:
             iterator = tqdm(iterator, total=len(futs), desc=f"Downloading '{playlist_name}'", unit="song", leave=False)
 
         for f in iterator:
-            ok, url, vid, final_path = f.result()
-            if ok:
-                if vid:
-                    downloaded_vids[vid] = final_path
-                if final_path:
-                    playlist_track_files.append(final_path)
-            else:
+            try:
+                ok, url, vid, final_path = f.result()
+                if ok:
+                    if vid and final_path:
+                        downloaded_vids[vid] = final_path
+                    if final_path:
+                        playlist_track_files.append(final_path)
+                else:
+                    failures.append(url)
+            except Exception:
+                # Make sure we log the URL that caused the exception
+                url = futs[f]
                 failures.append(url)
+                eprint(f"[ERR] Exception during download of {url}:")
+                import traceback
+                eprint(traceback.format_exc())
 
     success_count = len(urls_to_download) - len(failures)
-    log(f"Playlist '{playlist_name}' summary: {success_count} downloaded, {len(failures)} failed.")
+    log(f"Playlist '{playlist_name}' summary: {success_count} downloaded, {len(failures)} failed.", force=True)
 
     if failures:
         eprint(f"  [FAILURES] for '{playlist_name}':")
@@ -277,6 +318,7 @@ def process_playlist(
 
 
 def main() -> int:
+    global ARGS
     ap = argparse.ArgumentParser(description="Download YouTube Music playlists from a Google Takeout.")
     ap.add_argument("takeout_path", help="Path to folder containing Takeout JSON and/or CSV files")
     ap.add_argument("-o", "--output-dir", default="/library", help="Output library directory")
@@ -290,8 +332,9 @@ def main() -> int:
     ap.add_argument("--cookies", help="Path to a cookies.txt file (Netscape format)")
     ap.add_argument("--dry-run", action="store_true", help="Simulate the process without downloading files")
     ap.add_argument("--remove-videos-suffix", action="store_true", help="Remove '-videos' suffix from playlist names")
+    ap.add_argument("--verbose", action="store_true", help="Enable verbose logging to show yt-dlp output")
 
-    args = ap.parse_args()
+    ARGS = args = ap.parse_args()
 
     takeout_path = Path(args.takeout_path).resolve()
     out_root = Path(args.output_dir).resolve()
@@ -307,7 +350,7 @@ def main() -> int:
         eprint("No JSON playlist files found in the provided path.")
         return 1
 
-    log(f"Found {len(json_paths)} JSON playlist(s) to process.")
+    log(f"Found {len(json_paths)} JSON playlist(s) to process.", force=True)
     total_success = 0
     total_failures = 0
     downloaded_vids: Dict[str, Path] = {}
@@ -317,13 +360,13 @@ def main() -> int:
         total_success += s
         total_failures += f
 
-    log("\n" + "="*40)
+    log("\n" + "="*40, force=True)
     if total_failures > 0:
         eprint(f"\n[DONE] Completed with {total_failures} total failure(s).")
     else:
-        log("\n[DONE] All downloads completed successfully.")
-    log(f"Total tracks downloaded: {total_success}")
-    log("="*40)
+        log("\n[DONE] All downloads completed successfully.", force=True)
+    log(f"Total tracks downloaded: {total_success}", force=True)
+    log("="*40, force=True)
 
     return 0 if total_failures == 0 else 1
 

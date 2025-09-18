@@ -1,28 +1,19 @@
 services:
   ymde:
     build: .
-    image: ymde:latest
-    # Optional: uncomment to run as your host user (set UID/GID in a .env file)
-    # user: "${UID:-1000}:${GID:-1000}"
     environment:
-      # Core paths (mounted below)
-      TAKEOUT_PATH: "/data"
-      OUTPUT_DIR: "/library"
-
-      # Downloader options
-      REMOVE_VIDEOS_SUFFIX: "1"     # 1=remove "-videos" suffix from playlist names
-      AUDIO_FORMAT: "m4a"           # m4a or mp3
-      QUALITY: "0"                  # 0=best; for mp3 use 0..9
-      CONCURRENCY: "2"              # parallel downloads
-      WRITE_M3U: "1"                # 1=also write M3U8 playlists
-      PREFER_YOUTUBE_MUSIC: "1"     # 1=prefer music.youtube.com
-      RATE_LIMIT: ""                # e.g., 1M. Defaults to 500K if no cookies are used.
-      SLEEP: "1,3"                  # random sleep low,high seconds (empty to disable)
-      DRY_RUN: "0"                  # 1=dry-run
-      COOKIES: "/data/cookies.txt"  # optional; file must exist if set
-
+      - AUDIO_FORMAT=m4a
+      - QUALITY=0
+      - CONCURRENCY=2
+      - REMOVE_VIDEOS_SUFFIX=1
+      - PREFER_YOUTUBE_MUSIC=1
+      - WRITE_M3U=1
+      - VERBOSE=0
+      - DRY_RUN=0
+      - RATE_LIMIT=
+      - SLEEP=
+      - COOKIES=/data/cookies.txt
     volumes:
       - ./data:/data
       - ./library:/library
-
     restart: "no"

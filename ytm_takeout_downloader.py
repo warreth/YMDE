@@ -84,6 +84,7 @@ def build_ytdlp_cmd(
         "--add-metadata",
         "--no-abort-on-error",
         "--no-overwrites",
+        "--print", "after_move:filepath",
         "-o", outtmpl,
     ]
 
@@ -104,17 +105,19 @@ def build_ytdlp_cmd(
     cmd.append(u)
     return cmd
 
-def run_cmd(cmd: List[str]) -> int:
+def run_cmd(cmd: List[str]) -> Tuple[int, str]:
     try:
-        # Let yt-dlp print directly to stdout/stderr
-        proc = subprocess.run(cmd, check=False) # Changed to not raise on non-zero exit
-        return proc.returncode
+        # Let yt-dlp print directly to stdout/stderr, but capture final filename
+        proc = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8")
+        if proc.returncode != 0:
+            eprint(f"[yt-dlp stderr] {proc.stderr.strip()}")
+        return proc.returncode, proc.stdout.strip()
     except FileNotFoundError:
         eprint("yt-dlp not found. Make sure it is installed in the image.")
-        return 127
+        return 127, ""
     except Exception as e:
         eprint(f"[ERR] Failed to run yt-dlp: {e}")
-        return 1
+        return 1, ""
 
 def download_track(
     url: str,
@@ -127,7 +130,7 @@ def download_track(
     sleep: Optional[str],
     prefer_youtube_music: bool,
     dry_run: bool,
-) -> Tuple[bool, str, Optional[str]]:
+) -> Tuple[bool, str, Optional[str], Optional[Path]]:
     # Use yt-dlp’s own metadata for naming
     outtmpl = str(
         output_dir
@@ -146,15 +149,44 @@ def download_track(
         prefer_music=prefer_youtube_music,
         dry_run=dry_run,
     )
-    rc = run_cmd(cmd)
+    rc, final_path_str = run_cmd(cmd)
     vid = get_video_id(url)
-    return (rc == 0, url, vid)
+    
+    final_path = Path(final_path_str) if final_path_str and rc == 0 else None
+    
+    return rc == 0, url, vid, final_path
+
+def find_existing_file(vid: str, library_root: Path) -> Optional[Path]:
+    """Scans the library for a file matching the video ID."""
+    for f in library_root.rglob("*"):
+        if f.is_file() and f.stem == vid:
+            return f
+    return None
+
+def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[Path]) -> None:
+    pl_dir = library_root / "_playlists"
+    pl_dir.mkdir(parents=True, exist_ok=True)
+    
+    safe_name = re.sub(r'[\\/*?:"<>|]', "_", playlist_name)
+    m3u_path = pl_dir / f"{safe_name}.m3u8"
+
+    sorted_files = sorted(files, key=lambda p: p.name.lower())
+
+    try:
+        with m3u_path.open("w", encoding="utf-8") as f:
+            f.write("#EXTM3U\n")
+            for p in sorted_files:
+                rel_path = p.relative_to(library_root)
+                f.write(str(rel_path).replace("\\", "/") + "\n")
+        log(f"[M3U] Wrote playlist: {m3u_path}")
+    except Exception as e:
+        eprint(f"[WARN] Failed to write M3U playlist {m3u_path}: {e}")
 
 def process_playlist(
     playlist_path: Path,
     out_root: Path,
     args: argparse.Namespace,
-    downloaded_vids: set,
+    downloaded_vids: Dict[str, Path],
 ) -> Tuple[int, int]:
     """
     Processes a single playlist file: loads tracks, downloads them, and reports results.
@@ -168,6 +200,8 @@ def process_playlist(
     log(f"\n>>> Processing playlist: {playlist_name}")
 
     urls_to_download: List[str] = []
+    playlist_track_files: List[Path] = []
+
     for t in pl.get("tracks", []):
         url = t.get("url")
         vid = None
@@ -184,9 +218,13 @@ def process_playlist(
                 urls_to_download.append(url)
             else:
                 log(f"Skipping duplicate track in '{playlist_name}': {url}")
+                if downloaded_vids[vid]:
+                    playlist_track_files.append(downloaded_vids[vid])
 
     if not urls_to_download:
         log(f"No new tracks to download in playlist: {playlist_name}")
+        if args.write_m3u and playlist_track_files:
+            write_m3u_for_playlist(out_root, playlist_name, playlist_track_files)
         return 0, 0
 
     log(f"Found {len(urls_to_download)} new tracks. Starting downloads with concurrency={args.concurrency}...")
@@ -215,10 +253,12 @@ def process_playlist(
             iterator = tqdm(iterator, total=len(futs), desc=f"Downloading '{playlist_name}'", unit="song", leave=False)
 
         for f in iterator:
-            ok, url, vid = f.result()
+            ok, url, vid, final_path = f.result()
             if ok:
                 if vid:
-                    downloaded_vids.add(vid)
+                    downloaded_vids[vid] = final_path
+                if final_path:
+                    playlist_track_files.append(final_path)
             else:
                 failures.append(url)
 
@@ -229,6 +269,9 @@ def process_playlist(
         eprint(f"  [FAILURES] for '{playlist_name}':")
         for url in failures:
             eprint(f"    - {url}")
+
+    if args.write_m3u:
+        write_m3u_for_playlist(out_root, playlist_name, playlist_track_files)
 
     return success_count, len(failures)
 
@@ -266,7 +309,7 @@ def main() -> int:
     log(f"Found {len(json_paths)} JSON playlist(s) to process.")
     total_success = 0
     total_failures = 0
-    downloaded_vids = set()
+    downloaded_vids: Dict[str, Path] = {}
 
     for jp in sorted(json_paths):
         s, f = process_playlist(jp, out_root, args, downloaded_vids)
@@ -281,60 +324,8 @@ def main() -> int:
     log(f"Total tracks downloaded: {total_success}")
     log("="*40)
 
-    if args.write_m3u:
-        try:
-            write_m3u_from_library(out_root)
-        except Exception as e:
-            eprint(f"[WARN] Failed to write M3U playlists: {e}")
-
     return 0 if total_failures == 0 else 1
 
-def write_m3u_from_library(library_root: Path) -> None:
-    pl_dir = library_root / "_playlists"
-    pl_dir.mkdir(parents=True, exist_ok=True)
-
-    for artist_dir in library_root.iterdir():
-        if not artist_dir.is_dir() or artist_dir.name.startswith("_"):
-            continue
-        for album_dir in artist_dir.iterdir():
-            if not album_dir.is_dir():
-                continue
-            files = sorted(
-                [p for p in album_dir.iterdir() if p.is_file()],
-                key=lambda p: p.name.lower()
-            )
-            if not files:
-                continue
-            m3u = pl_dir / f"{album_dir.name}.m3u8"
-            with m3u.open("w", encoding="utf-8") as f:
-                f.write("#EXTM3U\n")
-                for p in files:
-                    rel = p.relative_to(library_root)
-                    f.write(str(rel).replace("\\", "/") + "\n")
-            log(f"[M3U] Wrote {m3u}")
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-
-def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[Path]) -> None:
-    pl_dir = library_root / "_playlists"
-    pl_dir.mkdir(parents=True, exist_ok=True)
-    
-    safe_name = re.sub(r'[\\/*?:"<>|]', "_", playlist_name)
-    m3u_path = pl_dir / f"{safe_name}.m3u8"
-
-    sorted_files = sorted(files, key=lambda p: p.name.lower())
-
-    try:
-        with m3u_path.open("w", encoding="utf-8") as f:
-            f.write("#EXTM3U\n")
-            for p in sorted_files:
-                rel_path = p.relative_to(library_root)
-                f.write(str(rel_path).replace("\\", "/") + "\n")
-        log(f"[M3U] Wrote playlist: {m3u_path}")
-    except Exception as e:
-        eprint(f"[WARN] Failed to write M3U playlist {m3u_path}: {e}")
 
 if __name__ == "__main__":
     sys.exit(main())

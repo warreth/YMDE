@@ -9,14 +9,15 @@ It scans your Google Takeout playlists (both JSON and CSV), downloads the audio 
 ## Features
 
 - **Google Takeout Support**: Directly processes playlists from your YouTube Music data.
+- **Fully supports importing into jellyfin**
 - **CSV Conversion**: Automatically converts `.csv` playlists into the required format.
 - **Efficient Downloading**: Uses `yt-dlp` for reliable downloads with parallel processing.
 - **Organized Library**: Saves files as `Playlist Name/Title [VideoID].ext`.
 - **Metadata & Thumbnails**: Embeds metadata and video thumbnails into audio files.
-- **M3U Playlists**: Optionally generates `.m3u8` playlists in a `_playlists` folder.
+- **M3U Playlists**: Optionally generates `.m3u8` playlists in the root of your library folder.
 - **Deduplication**: Prevents re-downloading tracks that already exist across all playlists.
 
-## Quick Start
+## Get Started
 
 **Prerequisites**: You need Docker and Docker Compose installed.
 
@@ -28,17 +29,27 @@ Create `data` and `library` folders in the same directory as the `compose.yml` f
 mkdir -p data library
 ```
 
-- **`./data`**: Place your Google Takeout `*.json` or `*.csv` playlist files here.
-- **`./library`**: This is where your downloaded music will be saved.
+### 2. Download Google Takeout Data
 
-### 2. Create a `compose.yml` File
+**Quick Steps:**
+
+1. Go to [Google Takeout](https://takeout.google.com/).
+2. **Uncheck all categories** except **"YouTube and YouTube Music"**.
+3. Click **"Multiple formats"** and set **History** to **JSON** or **CSV**.
+4. Click **"Next step"** and **request your data**.
+5. When your archive is ready, **download and extract it**.
+6. **Copy all `.csv` and `.json` files** from  
+   `Takeout/YouTube and YouTube Music/playlists/`  
+   into your local `./data/` folder.
+
+### 3. Create a `compose.yml` File
 
 Copy the example below and save it as `compose.yml`.
 
 ```yaml
 services:
   ymde:
-    image: ghcr.io/your-github-username/ymde:latest
+    image: ghcr.io/WarreTh/ymde:latest
     container_name: ymde
     volumes:
       - ./data:/data
@@ -53,15 +64,13 @@ services:
       - PREFER_YOUTUBE_MUSIC=1    # 1=Rewrite URLs to music.youtube.com for better metadata
       
       # --- Advanced Configuration ---
-      # - RATE_LIMIT=1M             # Limit download speed (e.g., 500K, 1M). Auto-set to 500K if no cookies.
+      # - RATE_LIMIT=1M             # Limit download speed (e.g., 500K, 1M).
       # - SLEEP="2,8"               # Sleep for a random 2-8 seconds between downloads.
       # - DRY_RUN=1                 # 1=Simulate without downloading, 0=disable
       # - COOKIES=/data/cookies.txt # Path to cookies file for private/gated content.
 ```
 
-**Important**: Replace `ghcr.io/your-github-username/ymde:latest` with the actual image path after you set up the GitHub Action.
-
-### 3. Run the Downloader
+### 4. Run the Downloader
 
 Execute the downloader using Docker Compose. It will pull the image (if not local), run the process, and then exit.
 
@@ -88,60 +97,69 @@ All settings are managed through environment variables in your `compose.yml` fil
 | `DRY_RUN`                | `1` to simulate the process without downloading files.                                                  | `0`         |
 | `COOKIES`                | Path to a `cookies.txt` file (Netscape format) for accessing private or age-gated content.              | ` `         |
 
+## Usage with Jellyfin
+
+There are two easy ways to get your downloaded music into Jellyfin:
+
+### Method 1: Manual Copy
+
+1. Run the downloader as described in the Quick Start.
+2. Once finished, copy all the contents from the local `./library` folder into your Jellyfin music library directory.
+3. In Jellyfin, go to **Dashboard** -> **Libraries**, click the three dots on your music library, and select **Scan Library**.
+
+Jellyfin will import the music and automatically detect the `.m3u8` playlists.
+
+### Method 2: Direct Mapping (Recommended)
+
+For a seamless experience, you can map the output directory directly to your Jellyfin music library. This way, music and playlists appear in Jellyfin automatically after the downloader runs.
+
+1. Find the absolute path to your Jellyfin music library on your host machine (e.g., `/storage/music` or `/home/user/jellyfin/music`).
+2. Update the `volumes` section in your `compose.yml` to point to that path:
+
+    ```yaml
+    services:
+      ymde:
+        # ... other settings
+        volumes:
+          - ./data:/data
+          - /path/to/your/jellyfin/music:/library # <-- Change this line
+        # ... other settings
+    ```
+
+3. Run the downloader: `docker compose run --rm ymde`.
+4. Scan your library in Jellyfin. New content will be added automatically.
+
+This avoids any manual copying and keeps your library perfectly in sync.
+
 ## Building the Image Manually
 
 If you prefer to build the Docker image locally instead of using a pre-built one from a registry:
 
-1.  **Build the image**:
+1. **Clone the repository**:
+
+    ```bash
+    git clone https://github.com/WarreTh/ymde.git
+    cd ymde
+    ```
+
+    > **Error Checking**: If you already have the repo, skip this step. If you get an error, check your internet connection or repository URL.
+
+2. **Build the image**:
+
     ```bash
     docker compose build
     ```
 
-2.  **Run the container**:
+    > **Error Checking**: If you get a build error, ensure Docker is running and you are in the correct directory.
+
+3. **Run the container**:
+
     ```bash
     docker compose run --rm ymde
     ```
 
-## Setting Up a GitHub Action to Build the Image
+    > **Error Checking**: If you get a runtime error, check your Docker Compose file and environment variables.
 
-You can automate building and publishing the Docker image to the GitHub Container Registry (ghcr.io) with a GitHub Action.
+## License
 
-1.  **Create the workflow file**: Create a file named `.github/workflows/build-docker.yml`.
-2.  **Add the workflow content**:
-
-    ```yaml
-    name: Build and Publish Docker Image
-
-    on:
-      push:
-        branches:
-          - main
-      workflow_dispatch:
-
-    jobs:
-      build-and-push:
-        runs-on: ubuntu-latest
-        permissions:
-          contents: read
-          packages: write
-
-        steps:
-          - name: Checkout repository
-            uses: actions/checkout@v3
-
-          - name: Log in to the Container registry
-            uses: docker/login-action@v2
-            with:
-              registry: ghcr.io
-              username: ${{ github.actor }}
-              password: ${{ secrets.GITHUB_TOKEN }}
-
-          - name: Build and push Docker image
-            uses: docker/build-push-action@v4
-            with:
-              context: .
-              push: true
-              tags: ghcr.io/${{ github.repository }}:latest
-    ```
-
-3.  **Run the Action**: Push to `main` or trigger it manually from the "Actions" tab in your GitHub repository. Your image will be available at `ghcr.io/YOUR_USERNAME/YOUR_REPO:latest`.
+This project is licensed under the AGPL-3.0 License. See the [LICENSE](LICENSE) file for details.

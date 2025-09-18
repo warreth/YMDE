@@ -168,10 +168,7 @@ def download_track(
 def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[Path]) -> None:
     """Writes an M3U8 playlist file for a given list of tracks."""
     safe_name = re.sub(r'[\\/*?:"<>|]', "_", playlist_name)
-    # Place playlists in a subdirectory to keep the root clean
-    playlist_dir = library_root / "_playlists"
-    playlist_dir.mkdir(exist_ok=True)
-    m3u_path = playlist_dir / f"{safe_name}.m3u8"
+    m3u_path = library_root / f"{safe_name}.m3u8"
 
     # Sort files alphabetically by filename
     sorted_files = sorted(files, key=lambda p: p.name.lower())

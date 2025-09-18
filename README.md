@@ -49,7 +49,7 @@ Copy the example below and save it as `compose.yml`.
 ```yaml
 services:
   ymde:
-    image: ghcr.io/WarreTh/ymde:latest
+    image: ghcr.io/warreth/ymde:latest
     container_name: ymde
     volumes:
       - ./data:/data

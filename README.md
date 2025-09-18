@@ -47,6 +47,7 @@ Edit `compose.yml` to change the default settings via environment variables:
 - `QUALITY`: For `mp3`, this is the VBR quality from `0` (best) to `9` (worst). Default is `0`.
 - `CONCURRENCY`: Number of parallel downloads (e.g., `4`).
 - `WRITE_M3U`: `1` to create M3U8 playlists from the downloaded folder structure (one per album).
+- `REMOVE_VIDEOS_SUFFIX`: `1` (default) to automatically remove the `-videos` suffix from playlist names (e.g., `My Playlist-videos` becomes `My Playlist`). Set to `0` to disable.
 - `PREFER_YOUTUBE_MUSIC`: `1` to rewrite YouTube video URLs to `music.youtube.com` for better metadata.
 - `RATE_LIMIT`: Download speed limit, e.g., `1M`. To prevent IP bans, this is automatically set to `500K` if you are not using cookies. You can set it to `""` to disable the limit or choose your own value.
 - `SLEEP`: A fixed or random delay between downloads, e.g., `5` or `2,8` (for 2-8 seconds).

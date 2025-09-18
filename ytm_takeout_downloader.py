@@ -194,6 +194,9 @@ def process_playlist(
         return 0, 0
 
     playlist_name = pl.get("name", playlist_path.stem)
+    if args.remove_videos_suffix and playlist_name.lower().endswith("-videos"):
+        playlist_name = playlist_name[:-7]
+        
     log(f"\n>>> Processing playlist: {playlist_name}")
 
     urls_to_download: List[str] = []
@@ -286,6 +289,7 @@ def main() -> int:
     ap.add_argument("--sleep", help='Sleep between downloads: "N" for fixed, or "min,max" for random')
     ap.add_argument("--cookies", help="Path to a cookies.txt file (Netscape format)")
     ap.add_argument("--dry-run", action="store_true", help="Simulate the process without downloading files")
+    ap.add_argument("--remove-videos-suffix", action="store_true", help="Remove '-videos' suffix from playlist names")
 
     args = ap.parse_args()
 

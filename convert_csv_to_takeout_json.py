@@ -37,7 +37,7 @@ def extract_video_id(row: Dict[str, Any]) -> Optional[str]:
                 return m.group(0)
     return None
 
-def convert_csv_file(csv_path: Path) -> Optional[Path]:
+def convert_csv_file(csv_path: Path, remove_suffix: bool) -> Optional[Path]:
     try:
         with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
@@ -69,9 +69,13 @@ def convert_csv_file(csv_path: Path) -> Optional[Path]:
         print(f"[INFO] No tracks parsed from {csv_path}, skipping.", file=sys.stderr)
         return None
 
+    playlist_name = csv_path.stem
+    if remove_suffix and playlist_name.lower().endswith("-videos"):
+        playlist_name = playlist_name[:-7]
+
     out_obj = {
         "type": "playlist",
-        "name": csv_path.stem,
+        "name": playlist_name,
         "tracks": tracks,
     }
 
@@ -86,7 +90,13 @@ def convert_csv_file(csv_path: Path) -> Optional[Path]:
         return None
 
 def main() -> int:
-    base = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/data")
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("base_path", nargs="?", default="/data", help="Path to scan for CSVs")
+    ap.add_argument("--remove-videos-suffix", action="store_true", help="Remove '-videos' suffix from playlist names")
+    args = ap.parse_args()
+
+    base = Path(args.base_path)
     if not base.exists():
         print(f"[ERROR] Input path not found: {base}", file=sys.stderr)
         return 2
@@ -94,7 +104,7 @@ def main() -> int:
     count = 0
     for p in base.rglob("*.csv"):
         if p.is_file():
-            if convert_csv_file(p):
+            if convert_csv_file(p, args.remove_videos_suffix):
                 count += 1
 
     print(f"[DONE] Converted {count} CSV file(s) under {base}")
@@ -102,4 +112,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-    #return 0

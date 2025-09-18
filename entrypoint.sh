@@ -3,10 +3,15 @@ set -euo pipefail
 
 TAKEOUT_PATH="${TAKEOUT_PATH:-/data}"
 OUTPUT_DIR="${OUTPUT_DIR:-/library}"
+REMOVE_VIDEOS_SUFFIX="${REMOVE_VIDEOS_SUFFIX:-1}"
 
 # Convert any CSV playlists to JSON before running the downloader
+CONVERT_ARGS=("${TAKEOUT_PATH}")
+if [[ "$REMOVE_VIDEOS_SUFFIX" == "1" ]]; then
+    CONVERT_ARGS+=("--remove-videos-suffix")
+fi
 echo "Scanning for CSV playlists in: ${TAKEOUT_PATH}"
-python /app/convert_csv_to_takeout_json.py "${TAKEOUT_PATH}"
+python /app/convert_csv_to_takeout_json.py "${CONVERT_ARGS[@]}"
 
 # Runtime options
 AUDIO_FORMAT="${AUDIO_FORMAT:-m4a}"
@@ -49,6 +54,9 @@ if [[ "$WRITE_M3U" == "1" ]]; then
 fi
 if [[ "$DRY_RUN" == "1" ]]; then
   ARGS+=("--dry-run")
+fi
+if [[ "$REMOVE_VIDEOS_SUFFIX" == "1" ]]; then
+  ARGS+=("--remove-videos-suffix")
 fi
 
 echo "Running: python /app/ytm_takeout_downloader.py ${ARGS[*]}"

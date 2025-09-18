@@ -10,6 +10,7 @@ services:
       OUTPUT_DIR: "/library"
 
       # Downloader options
+      REMOVE_VIDEOS_SUFFIX: "1"     # 1=remove "-videos" suffix from playlist names
       AUDIO_FORMAT: "m4a"           # m4a or mp3
       QUALITY: "0"                  # 0=best; for mp3 use 0..9
       CONCURRENCY: "2"              # parallel downloads

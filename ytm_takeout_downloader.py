@@ -21,6 +21,10 @@ def log(msg: str) -> None:
 def eprint(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
+def get_video_id(url: str) -> Optional[str]:
+    m = re.search(r"(?:youtube\.com|youtu\.be).*?([A-Za-z0-9_-]{11})", url)
+    return m.group(1) if m else None
+
 def find_json_playlists(root: Path) -> List[Path]:
     return [p for p in root.rglob("*.json") if p.is_file()]
 
@@ -115,6 +119,7 @@ def run_cmd(cmd: List[str]) -> int:
 def download_track(
     url: str,
     output_dir: Path,
+    playlist_name: str,
     audio_format: str,
     audio_quality: Optional[str],
     cookies: Optional[str],
@@ -122,12 +127,11 @@ def download_track(
     sleep: Optional[str],
     prefer_youtube_music: bool,
     dry_run: bool,
-) -> Tuple[bool, str]:
+) -> Tuple[bool, str, Optional[str]]:
     # Use yt-dlp’s own metadata for naming
     outtmpl = str(
         output_dir
-        / "%(artist|album_artist|uploader|channel)s"
-        / "%(album|playlist_title|uploader)s"
+        / playlist_name
         / "%(track|title)s.%(ext)s"
     )
 
@@ -143,12 +147,14 @@ def download_track(
         dry_run=dry_run,
     )
     rc = run_cmd(cmd)
-    return (rc == 0, url)
+    vid = get_video_id(url)
+    return (rc == 0, url, vid)
 
 def process_playlist(
     playlist_path: Path,
     out_root: Path,
     args: argparse.Namespace,
+    downloaded_vids: set,
 ) -> Tuple[int, int]:
     """
     Processes a single playlist file: loads tracks, downloads them, and reports results.
@@ -161,21 +167,29 @@ def process_playlist(
     playlist_name = pl.get("name", playlist_path.stem)
     log(f"\n>>> Processing playlist: {playlist_name}")
 
-    urls: List[str] = []
+    urls_to_download: List[str] = []
     for t in pl.get("tracks", []):
         url = t.get("url")
+        vid = None
         if not url:
             vid = t.get("videoId")
             if vid and re.fullmatch(r"[A-Za-z0-9_-]{11}", str(vid)):
                 url = f"https://www.youtube.com/watch?v={vid}"
-        if url:
-            urls.append(url)
+        
+        if url and not vid:
+            vid = get_video_id(url)
 
-    if not urls:
-        log(f"No tracks found in playlist: {playlist_name}")
+        if url and vid:
+            if vid not in downloaded_vids:
+                urls_to_download.append(url)
+            else:
+                log(f"Skipping duplicate track in '{playlist_name}': {url}")
+
+    if not urls_to_download:
+        log(f"No new tracks to download in playlist: {playlist_name}")
         return 0, 0
 
-    log(f"Found {len(urls)} tracks. Starting downloads with concurrency={args.concurrency}...")
+    log(f"Found {len(urls_to_download)} new tracks. Starting downloads with concurrency={args.concurrency}...")
 
     failures: List[str] = []
     with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
@@ -184,6 +198,7 @@ def process_playlist(
                 download_track,
                 url=url,
                 output_dir=out_root,
+                playlist_name=playlist_name,
                 audio_format=args.audio_format,
                 audio_quality=args.quality,
                 cookies=args.cookies,
@@ -192,7 +207,7 @@ def process_playlist(
                 prefer_youtube_music=args.prefer_youtube_music,
                 dry_run=args.dry_run,
             ): url
-            for url in urls
+            for url in urls_to_download
         }
 
         iterator = as_completed(futs)
@@ -200,11 +215,14 @@ def process_playlist(
             iterator = tqdm(iterator, total=len(futs), desc=f"Downloading '{playlist_name}'", unit="song", leave=False)
 
         for f in iterator:
-            ok, url = f.result()
-            if not ok:
+            ok, url, vid = f.result()
+            if ok:
+                if vid:
+                    downloaded_vids.add(vid)
+            else:
                 failures.append(url)
 
-    success_count = len(urls) - len(failures)
+    success_count = len(urls_to_download) - len(failures)
     log(f"Playlist '{playlist_name}' summary: {success_count} downloaded, {len(failures)} failed.")
 
     if failures:
@@ -248,9 +266,10 @@ def main() -> int:
     log(f"Found {len(json_paths)} JSON playlist(s) to process.")
     total_success = 0
     total_failures = 0
+    downloaded_vids = set()
 
     for jp in sorted(json_paths):
-        s, f = process_playlist(jp, out_root, args)
+        s, f = process_playlist(jp, out_root, args, downloaded_vids)
         total_success += s
         total_failures += f
 

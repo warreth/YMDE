@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
@@ -15,65 +14,58 @@ try:
 except ImportError:
     tqdm = None
 
-# Global ARGS placeholder, to be initialized in main()
-ARGS: Optional[argparse.Namespace] = None
-
-def log(msg: str, force: bool = False) -> None:
-    # In verbose mode, always print. Otherwise, only print if forced.
-    if (ARGS and ARGS.verbose) or force:
-        print(msg, flush=True)
+def log(msg: str) -> None:
+    """Prints a message to standard output."""
+    print(msg, flush=True)
 
 def eprint(msg: str) -> None:
-    # In verbose mode, tqdm is not active, so just print.
-    # Otherwise, use tqdm.write to avoid interfering with the progress bar.
-    if ARGS and ARGS.verbose:
-        print(msg, file=sys.stderr, flush=True)
-    elif tqdm:
-        tqdm.write(msg, file=sys.stderr)
-    else:
-        print(msg, file=sys.stderr, flush=True)
-
+    """Prints a message to standard error."""
+    print(msg, file=sys.stderr, flush=True)
 
 def get_video_id(url: str) -> Optional[str]:
+    """Extracts the 11-character video ID from a YouTube URL."""
     m = re.search(r"(?:youtube\.com|youtu\.be).*?([A-Za-z0-9_-]{11})", url)
     return m.group(1) if m else None
 
-
 def find_json_playlists(root: Path) -> List[Path]:
-    return [p for p in root.rglob("*.json") if p.is_file()]
+    """Finds all .json files in a directory, sorted alphabetically."""
+    return sorted([p for p in root.rglob("*.json") if p.is_file()])
 
 def load_playlist(json_path: Path) -> Optional[Dict[str, Any]]:
+    """Loads a JSON playlist file, returning None if it's invalid."""
     try:
         with json_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
+        # Basic validation
         if isinstance(data, dict) and data.get("type") == "playlist" and isinstance(data.get("tracks"), list):
             return data
+        eprint(f"[WARN] Invalid playlist format in {json_path}")
         return None
     except Exception as e:
         eprint(f"[WARN] Failed to read JSON {json_path}: {e}")
         return None
 
 def maybe_rewrite_to_ytmusic(url: str, prefer_music: bool) -> str:
+    """Rewrites a standard YouTube URL to a YouTube Music URL if preferred."""
     if not prefer_music:
         return url
-    m = re.search(r"(?:youtube\.com|youtu\.be).*?([A-Za-z0-9_-]{11})", url)
-    if not m:
-        return url
-    vid = m.group(1)
-    return f"https://music.youtube.com/watch?v={vid}"
+    vid = get_video_id(url)
+    return f"https://music.youtube.com/watch?v={vid}" if vid else url
 
 def _add_sleep_flags(cmd: List[str], sleep: Optional[str]) -> None:
+    """Adds sleep-related flags to the yt-dlp command."""
     s = (sleep or "").strip()
     if not s:
         return
-    if "," in s:
-        lo, hi = [x.strip() for x in s.split(",", 1)]
-        if lo and hi:
-            cmd.extend(["--min-sleep-interval", lo, "--max-sleep-interval", hi])
-        elif lo or hi:
-            cmd.extend(["--sleep-interval", lo or hi])
-    else:
-        cmd.extend(["--sleep-interval", s])
+    try:
+        if "," in s:
+            lo, hi = [float(x.strip()) for x in s.split(",", 1)]
+            cmd.extend(["--min-sleep-interval", str(lo), "--max-sleep-interval", str(hi)])
+        else:
+            cmd.extend(["--sleep-interval", str(float(s))])
+    except ValueError:
+        eprint(f"[WARN] Invalid sleep value '{s}'. It must be a number or 'min,max'.")
+
 
 def build_ytdlp_cmd(
     url: str,
@@ -86,12 +78,13 @@ def build_ytdlp_cmd(
     prefer_music: bool,
     dry_run: bool,
 ) -> List[str]:
+    """Builds the full yt-dlp command as a list of strings."""
     u = maybe_rewrite_to_ytmusic(url, prefer_music)
 
     cmd: List[str] = [
         "yt-dlp",
         "--no-playlist",
-        "-x",
+        "-x",  # Extract audio
         "--audio-format", audio_format,
         "--embed-metadata",
         "--embed-thumbnail",
@@ -119,35 +112,19 @@ def build_ytdlp_cmd(
     cmd.append(u)
     return cmd
 
-def run_cmd(cmd: List[str], verbose: bool) -> Tuple[int, str]:
+def run_cmd(cmd: List[str]) -> Tuple[int, str]:
+    """Executes a command, capturing its output and return code."""
     try:
-        if verbose:
-            # Stream output in real-time
-            log(f"Running command: {' '.join(cmd)}", force=True)
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8")
-            output_lines = []
-            if proc.stdout:
-                for line in iter(proc.stdout.readline, ""):
-                    line = line.strip()
-                    print(f"  [yt-dlp] {line}")
-                    if line.startswith("after_move:"):
-                        output_lines.append(line.split(":", 1)[1].strip())
-            proc.wait()
-            final_path = output_lines[-1] if output_lines else ""
-            return proc.returncode, final_path
-        else:
-            # Capture output for progress bar mode
-            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8")
-            if proc.returncode != 0:
-                eprint(f"[yt-dlp stderr] {proc.stderr.strip()}")
-            return proc.returncode, proc.stdout.strip()
+        proc = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8")
+        if proc.returncode != 0:
+            eprint(f"[yt-dlp stderr] {proc.stderr.strip()}")
+        return proc.returncode, proc.stdout.strip()
     except FileNotFoundError:
-        eprint("yt-dlp not found. Make sure it is installed in the image.")
+        eprint("yt-dlp not found. Make sure it is installed and in your PATH.")
         return 127, ""
     except Exception as e:
-        eprint(f"[ERR] Failed to run yt-dlp: {e}")
+        eprint(f"[ERR] Failed to run command '{' '.join(cmd)}': {e}")
         return 1, ""
-
 
 def download_track(
     url: str,
@@ -160,13 +137,14 @@ def download_track(
     sleep: Optional[str],
     prefer_youtube_music: bool,
     dry_run: bool,
-    verbose: bool,
 ) -> Tuple[bool, str, Optional[str], Optional[Path]]:
-    # Use yt-dlp’s own metadata for naming
+    """Downloads a single track and returns its success status and final path."""
+    # Use yt-dlp's output template for naming. Using the video ID in the filename
+    # helps with deduplication and lookups.
     outtmpl = str(
         output_dir
         / playlist_name
-        / "%(track|title)s.%(ext)s"
+        / "%(title)s [%(id)s].%(ext)s"
     )
 
     cmd = build_ytdlp_cmd(
@@ -180,33 +158,33 @@ def download_track(
         prefer_music=prefer_youtube_music,
         dry_run=dry_run,
     )
-    rc, final_path_str = run_cmd(cmd, verbose=verbose)
+    rc, final_path_str = run_cmd(cmd)
     vid = get_video_id(url)
     
     final_path = Path(final_path_str) if final_path_str and rc == 0 else None
     
     return rc == 0, url, vid, final_path
 
-def find_existing_file(vid: str, library_root: Path) -> Optional[Path]:
-    """Scans the library for a file matching the video ID."""
-    for f in library_root.rglob("*"):
-        if f.is_file() and f.stem == vid:
-            return f
-    return None
-
 def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[Path]) -> None:
+    """Writes an M3U8 playlist file for a given list of tracks."""
     safe_name = re.sub(r'[\\/*?:"<>|]', "_", playlist_name)
-    m3u_path = library_root / f"{safe_name}.m3u8"
+    # Place playlists in a subdirectory to keep the root clean
+    playlist_dir = library_root / "_playlists"
+    playlist_dir.mkdir(exist_ok=True)
+    m3u_path = playlist_dir / f"{safe_name}.m3u8"
 
+    # Sort files alphabetically by filename
     sorted_files = sorted(files, key=lambda p: p.name.lower())
 
     try:
         with m3u_path.open("w", encoding="utf-8") as f:
             f.write("#EXTM3U\n")
             for p in sorted_files:
+                # M3U paths should be relative to the library root, not the playlist file
                 rel_path = p.relative_to(library_root)
-                f.write(str(rel_path).replace("\\", "/") + "\n")
-        log(f"[M3U] Wrote playlist: {m3u_path}", force=True)
+                f.write(f"{rel_path.as_posix()}\n")
+
+        log(f"[M3U] Wrote playlist: {m3u_path}")
     except Exception as e:
         eprint(f"[WARN] Failed to write M3U playlist {m3u_path}: {e}")
 
@@ -226,7 +204,7 @@ def process_playlist(
 
     playlist_name = pl.get("name", playlist_path.stem)
     if args.remove_videos_suffix and playlist_name.lower().endswith("-videos"):
-        playlist_name = playlist_name[:-7]
+        playlist_name = playlist_name[:-7].strip()
         
     log(f"\n>>> Processing playlist: {playlist_name}")
 
@@ -235,30 +213,35 @@ def process_playlist(
 
     for t in pl.get("tracks", []):
         url = t.get("url")
-        vid = None
-        if not url:
-            vid = t.get("videoId")
-            if vid and re.fullmatch(r"[A-Za-z0-9_-]{11}", str(vid)):
-                url = f"https://www.youtube.com/watch?v={vid}"
+        vid = t.get("videoId")
+
+        # If we only have a videoId, construct the URL.
+        if vid and not url:
+            url = f"https://www.youtube.com/watch?v={vid}"
         
+        # If we have a URL but no videoId, extract it.
         if url and not vid:
             vid = get_video_id(url)
 
-        if url and vid:
-            if vid not in downloaded_vids:
-                urls_to_download.append(url)
-            else:
-                log(f"Skipping duplicate track in '{playlist_name}': {url}")
-                if downloaded_vids[vid]:
-                    playlist_track_files.append(downloaded_vids[vid])
+        if not (url and vid):
+            log(f"Skipping track with missing URL or videoId: {t.get('title', 'Unknown')}")
+            continue
+
+        if vid not in downloaded_vids:
+            urls_to_download.append(url)
+        else:
+            log(f"Skipping duplicate track in '{playlist_name}': {url}")
+            existing_path = downloaded_vids.get(vid)
+            if existing_path:
+                playlist_track_files.append(existing_path)
 
     if not urls_to_download:
-        log(f"No new tracks to download in playlist: {playlist_name}", force=True)
+        log(f"No new tracks to download in playlist: {playlist_name}")
         if args.write_m3u and playlist_track_files:
             write_m3u_for_playlist(out_root, playlist_name, playlist_track_files)
         return 0, 0
 
-    log(f"Found {len(urls_to_download)} new tracks. Starting downloads with concurrency={args.concurrency}...", force=True)
+    log(f"Found {len(urls_to_download)} new tracks. Starting downloads with concurrency={args.concurrency}...")
 
     failures: List[str] = []
     with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
@@ -275,66 +258,58 @@ def process_playlist(
                 sleep=args.sleep,
                 prefer_youtube_music=args.prefer_youtube_music,
                 dry_run=args.dry_run,
-                verbose=args.verbose,
             ): url
             for url in urls_to_download
         }
 
-        # Only show progress bar if not in verbose mode
+        # Add a progress bar if tqdm is installed
         iterator = as_completed(futs)
-        if tqdm and not args.verbose:
-            iterator = tqdm(iterator, total=len(futs), desc=f"Downloading '{playlist_name}'", unit="song", leave=False)
+        if tqdm:
+            desc = f"Downloading '{playlist_name}'"
+            iterator = tqdm(iterator, total=len(futs), desc=desc, unit="song", leave=False)
 
         for f in iterator:
-            try:
-                ok, url, vid, final_path = f.result()
-                if ok:
-                    if vid and final_path:
-                        downloaded_vids[vid] = final_path
-                    if final_path:
-                        playlist_track_files.append(final_path)
-                else:
-                    failures.append(url)
-            except Exception:
-                # Make sure we log the URL that caused the exception
-                url = futs[f]
+            ok, url, vid, final_path = f.result()
+            if ok and vid and final_path:
+                downloaded_vids[vid] = final_path
+                playlist_track_files.append(final_path)
+            else:
                 failures.append(url)
-                eprint(f"[ERR] Exception during download of {url}:")
-                import traceback
-                eprint(traceback.format_exc())
 
     success_count = len(urls_to_download) - len(failures)
-    log(f"Playlist '{playlist_name}' summary: {success_count} downloaded, {len(failures)} failed.", force=True)
+    log(f"Playlist '{playlist_name}' summary: {success_count} downloaded, {len(failures)} failed.")
 
     if failures:
         eprint(f"  [FAILURES] for '{playlist_name}':")
         for url in failures:
             eprint(f"    - {url}")
 
-    if args.write_m3u:
+    if args.write_m3u and playlist_track_files:
         write_m3u_for_playlist(out_root, playlist_name, playlist_track_files)
 
     return success_count, len(failures)
 
 
 def main() -> int:
-    global ARGS
-    ap = argparse.ArgumentParser(description="Download YouTube Music playlists from a Google Takeout.")
-    ap.add_argument("takeout_path", help="Path to folder containing Takeout JSON and/or CSV files")
-    ap.add_argument("-o", "--output-dir", default="/library", help="Output library directory")
-    ap.add_argument("--audio-format", default="m4a", choices=["m4a", "mp3"], help="Output audio format")
-    ap.add_argument("--quality", default="0", help="Audio quality (for mp3: 0=best VBR, 9=worst)")
-    ap.add_argument("--concurrency", type=int, default=2, help="Number of parallel downloads")
-    ap.add_argument("--prefer-youtube-music", action="store_true", help="Rewrite video URLs to music.youtube.com for better music metadata")
-    ap.add_argument("--write-m3u", action="store_true", help="Write m3u8 playlists for each album folder after download")
-    ap.add_argument("--rate-limit", help="Limit download rate, e.g. 1M")
-    ap.add_argument("--sleep", help='Sleep between downloads: "N" for fixed, or "min,max" for random')
-    ap.add_argument("--cookies", help="Path to a cookies.txt file (Netscape format)")
-    ap.add_argument("--dry-run", action="store_true", help="Simulate the process without downloading files")
-    ap.add_argument("--remove-videos-suffix", action="store_true", help="Remove '-videos' suffix from playlist names")
-    ap.add_argument("--verbose", action="store_true", help="Enable verbose logging to show yt-dlp output")
+    """Main entrypoint for the script."""
+    ap = argparse.ArgumentParser(
+        description="Download YouTube Music playlists from a Google Takeout.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    ap.add_argument("takeout_path", help="Path to folder containing Takeout JSON and/or CSV files.")
+    ap.add_argument("-o", "--output-dir", default="/library", help="Output library directory.")
+    ap.add_argument("--audio-format", default="m4a", choices=["m4a", "mp3"], help="Output audio format.")
+    ap.add_argument("--quality", default="0", help="For MP3, VBR quality from 0 (best) to 9 (worst).")
+    ap.add_argument("--concurrency", type=int, default=2, help="Number of parallel downloads.")
+    ap.add_argument("--prefer-youtube-music", action="store_true", help="Rewrite video URLs to music.youtube.com for better metadata.")
+    ap.add_argument("--write-m3u", action="store_true", help="Write M3U8 playlists for each playlist.")
+    ap.add_argument("--rate-limit", help="Limit download rate (e.g., '1M' for 1MB/s).")
+    ap.add_argument("--sleep", help='Sleep between downloads: "N" for fixed seconds, or "MIN,MAX" for a random range.')
+    ap.add_argument("--cookies", help="Path to a cookies.txt file (Netscape format) for private/gated content.")
+    ap.add_argument("--dry-run", action="store_true", help="Simulate the process without downloading any files.")
+    ap.add_argument("--remove-videos-suffix", action="store_true", help="Remove '-videos' suffix from playlist names.")
 
-    ARGS = args = ap.parse_args()
+    args = ap.parse_args()
 
     takeout_path = Path(args.takeout_path).resolve()
     out_root = Path(args.output_dir).resolve()
@@ -344,31 +319,31 @@ def main() -> int:
         eprint(f"[ERROR] Path not found: {takeout_path}")
         return 2
 
-    # Gather and process playlists one by one
     json_paths = find_json_playlists(takeout_path)
     if not json_paths:
         eprint("No JSON playlist files found in the provided path.")
         return 1
 
-    log(f"Found {len(json_paths)} JSON playlist(s) to process.", force=True)
+    log(f"Found {len(json_paths)} JSON playlist(s) to process.")
     total_success = 0
     total_failures = 0
+    # This dictionary tracks all downloaded video IDs and their file paths across all playlists
     downloaded_vids: Dict[str, Path] = {}
 
-    for jp in sorted(json_paths):
+    for jp in json_paths:
         s, f = process_playlist(jp, out_root, args, downloaded_vids)
         total_success += s
         total_failures += f
 
-    log("\n" + "="*40, force=True)
+    log("\n" + "="*40)
     if total_failures > 0:
         eprint(f"\n[DONE] Completed with {total_failures} total failure(s).")
     else:
-        log("\n[DONE] All downloads completed successfully.", force=True)
-    log(f"Total tracks downloaded: {total_success}", force=True)
-    log("="*40, force=True)
+        log("\n[DONE] All downloads completed successfully.")
+    log(f"Total unique tracks downloaded: {total_success}")
+    log("="*40)
 
-    return 0 if total_failures == 0 else 1
+    return 1 if total_failures > 0 else 0
 
 
 if __name__ == "__main__":

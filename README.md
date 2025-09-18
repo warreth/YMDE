@@ -1,84 +1,147 @@
-# YMDE (YouTube Music Downloader and Exporter)
+# YMDE: YouTube Music Downloader & Exporter
 
-This container:
-- Scans your Google Takeout JSON playlists (from YouTube/YouTube Music).
-- Also converts CSV playlists to the same JSON format.
-- Downloads audio for each track using `yt-dlp`.
-- Organizes and tags files for media servers like Jellyfin.
-- Saves files to `library/Artist/Album/Title.ext`.
-- Optionally writes `.m3u8` playlists to `library/_playlists/`.
+YMDE is a simple tool for downloading your music from YouTube and organizing it into a clean, tagged library suitable for media servers like Jellyfin or Plex.
 
-Note: Use this tool only in ways permitted by YouTube’s Terms of Service and your local laws.
+It scans your Google Takeout playlists (both JSON and CSV), downloads the audio for each track, and saves it into a structured folder format.
+
+**Disclaimer**: This tool is for personal, archival purposes only. Ensure your use complies with YouTube's Terms of Service and all applicable laws in your country.
+
+## Features
+
+- **Google Takeout Support**: Directly processes playlists from your YouTube Music data.
+- **CSV Conversion**: Automatically converts `.csv` playlists into the required format.
+- **Efficient Downloading**: Uses `yt-dlp` for reliable downloads with parallel processing.
+- **Organized Library**: Saves files as `Playlist Name/Title [VideoID].ext`.
+- **Metadata & Thumbnails**: Embeds metadata and video thumbnails into audio files.
+- **M3U Playlists**: Optionally generates `.m3u8` playlists in a `_playlists` folder.
+- **Deduplication**: Prevents re-downloading tracks that already exist across all playlists.
 
 ## Quick Start
 
-1.  **Prerequisites**: Docker and Docker Compose must be installed.
+**Prerequisites**: You need Docker and Docker Compose installed.
 
-2.  **Setup Folders**: Create `data` and `library` directories next to your `compose.yml` file.
+### 1. Set Up Your Folders
 
-    ```bash
-    mkdir -p data library
-    ```
+Create `data` and `library` folders in the same directory as the `compose.yml` file.
 
-    - Place your Takeout JSON and/or CSV files in `./data`.
-    - If needed for private or age-gated content, save your browser cookies as `./data/cookies.txt` (Netscape format).
+```bash
+mkdir -p data library
+```
 
-3.  **Build the Image**:
+- **`./data`**: Place your Google Takeout `*.json` or `*.csv` playlist files here.
+- **`./library`**: This is where your downloaded music will be saved.
 
+### 2. Create a `compose.yml` File
+
+Copy the example below and save it as `compose.yml`.
+
+```yaml
+services:
+  ymde:
+    image: ghcr.io/your-github-username/ymde:latest
+    container_name: ymde
+    volumes:
+      - ./data:/data
+      - ./library:/library
+    environment:
+      # --- Basic Configuration ---
+      - AUDIO_FORMAT=m4a          # m4a or mp3
+      - QUALITY=0                 # For MP3, VBR quality (0=best, 9=worst)
+      - CONCURRENCY=4             # Number of parallel downloads
+      - WRITE_M3U=1               # 1=Create M3U8 playlists, 0=disable
+      - REMOVE_VIDEOS_SUFFIX=1    # 1=Remove "-videos" from playlist names, 0=disable
+      - PREFER_YOUTUBE_MUSIC=1    # 1=Rewrite URLs to music.youtube.com for better metadata
+      
+      # --- Advanced Configuration ---
+      # - RATE_LIMIT=1M             # Limit download speed (e.g., 500K, 1M). Auto-set to 500K if no cookies.
+      # - SLEEP="2,8"               # Sleep for a random 2-8 seconds between downloads.
+      # - DRY_RUN=1                 # 1=Simulate without downloading, 0=disable
+      # - COOKIES=/data/cookies.txt # Path to cookies file for private/gated content.
+```
+
+**Important**: Replace `ghcr.io/your-github-username/ymde:latest` with the actual image path after you set up the GitHub Action.
+
+### 3. Run the Downloader
+
+Execute the downloader using Docker Compose. It will pull the image (if not local), run the process, and then exit.
+
+```bash
+docker compose run --rm ymde
+```
+
+Your music will appear in the `./library` directory, organized by playlist.
+
+## Configuration
+
+All settings are managed through environment variables in your `compose.yml` file.
+
+| Variable                 | Description                                                                                             | Default     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- | ----------- |
+| `AUDIO_FORMAT`           | Output audio format.                                                                                    | `m4a`       |
+| `QUALITY`                | For `mp3`, VBR quality (`0`=best, `9`=worst).                                                           | `0`         |
+| `CONCURRENCY`            | Number of downloads to run in parallel.                                                                 | `2`         |
+| `WRITE_M3U`              | `1` to create `.m3u8` playlists in a `_playlists` folder.                                               | `1`         |
+| `REMOVE_VIDEOS_SUFFIX`   | `1` to change `My Playlist-videos` to `My Playlist`.                                                      | `1`         |
+| `PREFER_YOUTUBE_MUSIC`   | `1` to rewrite URLs to `music.youtube.com` for better metadata.                                           | `1`         |
+| `RATE_LIMIT`             | Download speed limit (e.g., `1M`). **Automatically set to `500K` if no cookies are used.**                | ` `         |
+| `SLEEP`                  | Delay between downloads. Fixed (`5`) or random range (`2,8`).                                           | ` `         |
+| `DRY_RUN`                | `1` to simulate the process without downloading files.                                                  | `0`         |
+| `COOKIES`                | Path to a `cookies.txt` file (Netscape format) for accessing private or age-gated content.              | ` `         |
+
+## Building the Image Manually
+
+If you prefer to build the Docker image locally instead of using a pre-built one from a registry:
+
+1.  **Build the image**:
     ```bash
     docker compose build
     ```
 
-4.  **Run the Downloader**:
-
+2.  **Run the container**:
     ```bash
     docker compose run --rm ymde
     ```
 
-5.  **Check the Results**:
-    - Your audio files will be in `./library`.
-    - Playlists, if enabled, will be in `./library/_playlists/*.m3u8`.
+## Setting Up a GitHub Action to Build the Image
 
-## Configuration
+You can automate building and publishing the Docker image to the GitHub Container Registry (ghcr.io) with a GitHub Action.
 
-Edit `compose.yml` to change the default settings via environment variables:
+1.  **Create the workflow file**: Create a file named `.github/workflows/build-docker.yml`.
+2.  **Add the workflow content**:
 
-- `AUDIO_FORMAT`: `m4a` (default) or `mp3`.
-- `QUALITY`: For `mp3`, this is the VBR quality from `0` (best) to `9` (worst). Default is `0`.
-- `CONCURRENCY`: Number of parallel downloads (e.g., `4`).
-- `WRITE_M3U`: `1` to create M3U8 playlists from the downloaded folder structure (one per album).
-- `REMOVE_VIDEOS_SUFFIX`: `1` (default) to automatically remove the `-videos` suffix from playlist names (e.g., `My Playlist-videos` becomes `My Playlist`). Set to `0` to disable.
-- `PREFER_YOUTUBE_MUSIC`: `1` to rewrite YouTube video URLs to `music.youtube.com` for better metadata.
-- `VERBOSE`: `0` (default) to show a progress bar, or `1` to show detailed real-time output from `yt-dlp`.
-- `RATE_LIMIT`: Download speed limit, e.g., `1M`. To prevent IP bans, this is automatically set to `500K` if you are not using cookies. You can set it to `""` to disable the limit or choose your own value.
-- `SLEEP`: A fixed or random delay between downloads, e.g., `5` or `2,8` (for 2-8 seconds).
-- `DRY_RUN`: `1` to simulate the process without downloading files.
-- `COOKIES`: Path to a cookies file inside the container (default: `/data/cookies.txt`).
+    ```yaml
+    name: Build and Publish Docker Image
 
+    on:
+      push:
+        branches:
+          - main
+      workflow_dispatch:
 
-## Alternative: `docker run` (without Compose)
+    jobs:
+      build-and-push:
+        runs-on: ubuntu-latest
+        permissions:
+          contents: read
+          packages: write
 
-```bash
-docker build -t ymde .
-docker run --rm \
-  -v "$PWD/data:/data" \
-  -v "$PWD/library:/library" \
-  -e AUDIO_FORMAT=m4a \
-  -e QUALITY=0 \
-  -e CONCURRENCY=2 \
-  -e WRITE_M3U=1 \
-  -e PREFER_YOUTUBE_MUSIC=1 \
-  -e SLEEP="1,3" \
-  -e COOKIES=/data/cookies.txt \
-  ymde
-```
+        steps:
+          - name: Checkout repository
+            uses: actions/checkout@v3
 
-## Tips
+          - name: Log in to the Container registry
+            uses: docker/login-action@v2
+            with:
+              registry: ghcr.io
+              username: ${{ github.actor }}
+              password: ${{ secrets.GITHUB_TOKEN }}
 
-- **Folder Structure**: The downloader saves files in an `Artist/Album` structure. This is highly recommended for media servers like Jellyfin, as it helps them correctly identify and organize your music library.
-- **Cookies**: Install `cookies.txt` only if needed for age-gated/region/private content.
-- **Metadata**: If `yt-dlp` occasionally picks the wrong version of a song, you can edit the URL in your source JSON file and re-run the downloader.
+          - name: Build and push Docker image
+            uses: docker/build-push-action@v4
+            with:
+              context: .
+              push: true
+              tags: ghcr.io/${{ github.repository }}:latest
+    ```
 
-## Disclaimer
-
-This tool is a wrapper around `yt-dlp`. Ensure your use of this software complies with all applicable laws and the terms of service of any websites you access. The developers of this tool are not responsible for its misuse.
+3.  **Run the Action**: Push to `main` or trigger it manually from the "Actions" tab in your GitHub repository. Your image will be available at `ghcr.io/YOUR_USERNAME/YOUR_REPO:latest`.

@@ -88,7 +88,7 @@ All settings are managed through environment variables in your `compose.yml` fil
 | ------------------------ | ------------------------------------------------------------------------------------------------------- | ----------- |
 | `AUDIO_FORMAT`           | Output audio format.                                                                                    | `m4a`       |
 | `QUALITY`                | For `mp3`, VBR quality (`0`=best, `9`=worst).                                                           | `0`         |
-| `CONCURRENCY`            | Number of downloads to run in parallel.                                                                 | `2`         |
+| `CONCURRENCY`            | Number of downloads to run in parallel.                                                                 | `4`         |
 | `WRITE_M3U`              | `1` to create `.m3u8` playlists in a `_playlists` folder.                                               | `1`         |
 | `REMOVE_VIDEOS_SUFFIX`   | `1` to change `My Playlist-videos` to `My Playlist`.                                                      | `1`         |
 | `PREFER_YOUTUBE_MUSIC`   | `1` to rewrite URLs to `music.youtube.com` for better metadata.                                           | `1`         |

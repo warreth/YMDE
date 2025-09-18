@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Activate virtual environment
+export PATH="/opt/venv/bin:$PATH"
+
 # Default values for environment variables
 TAKEOUT_PATH="${TAKEOUT_PATH:-/data}"
 OUTPUT_DIR="${OUTPUT_DIR:-/library}"
 AUDIO_FORMAT="${AUDIO_FORMAT:-m4a}"
 QUALITY="${QUALITY:-0}"
-CONCURRENCY="${CONCURRENCY:-2}"
+CONCURRENCY="${CONCURRENCY:-4}"
 WRITE_M3U="${WRITE_M3U:-1}"
 REMOVE_VIDEOS_SUFFIX="${REMOVE_VIDEOS_SUFFIX:-1}"
 PREFER_YOUTUBE_MUSIC="${PREFER_YOUTUBE_MUSIC:-1}"

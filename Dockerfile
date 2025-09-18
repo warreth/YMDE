@@ -1,6 +1,31 @@
-FROM python:3.11-slim
+# ---- Builder Stage ----
+FROM python:3.11-slim as builder
 
 ARG DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends git
+
+WORKDIR /app
+
+# Create and activate a virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install Python dependencies into the virtual environment
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Copy application code
+COPY ytm_takeout_downloader.py /app/ytm_takeout_downloader.py
+COPY convert_csv_to_takeout_json.py /app/convert_csv_to_takeout_json.py
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+
+# ---- Final Stage ----
+FROM python:3.11-slim
+
 ARG BUILD_DATE
 ARG VERSION
 ARG VCS_REF
@@ -20,17 +45,14 @@ RUN bash -euxo pipefail -c '\
 
 WORKDIR /app
 
-# Python deps
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# Copy virtual environment and application code from builder stage
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app /app
 
-# App code
-COPY ytm_takeout_downloader.py /app/ytm_takeout_downloader.py
-COPY convert_csv_to_takeout_json.py /app/convert_csv_to_takeout_json.py
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# Set path to use the virtual environment's Python
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
 
 VOLUME ["/data", "/library"]
-ENV PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["/app/entrypoint.sh"]

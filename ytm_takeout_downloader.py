@@ -22,6 +22,27 @@ def eprint(msg: str) -> None:
     """Prints a message to standard error."""
     print(msg, file=sys.stderr, flush=True)
 
+def find_existing_downloads(library_root: Path) -> Dict[str, Path]:
+    """Scans the library for existing files and maps video IDs to their paths."""
+    log("Scanning library for existing downloads...")
+    vids: Dict[str, Path] = {}
+    # Regex to find the 11-char ID in brackets just before the extension
+    id_re = re.compile(r"\[([A-Za-z0-9_-]{11})\]\.[^.]+$")
+
+    # Using rglob to find all files in all subdirectories
+    for p in library_root.rglob("*.*"):
+        if not p.is_file():
+            continue
+
+        m = id_re.search(p.name)
+        if m:
+            vid = m.group(1)
+            if vid not in vids:
+                vids[vid] = p
+
+    log(f"Found {len(vids)} existing tracks in the library.")
+    return vids
+
 def get_video_id(url: str) -> Optional[str]:
     """Extracts the 11-character video ID from a YouTube URL."""
     m = re.search(r"(?:youtube\.com|youtu\.be).*?([A-Za-z0-9_-]{11})", url)
@@ -194,14 +215,14 @@ def process_playlist(
     out_root: Path,
     args: argparse.Namespace,
     downloaded_vids: Dict[str, Path],
-) -> Tuple[int, int]:
+) -> Tuple[int, int, int, List[str]]:
     """
     Processes a single playlist file: loads tracks, downloads them, and reports results.
-    Returns a tuple of (success_count, failure_count).
+    Returns a tuple of (success_count, failure_count, skipped_count, failed_urls).
     """
     pl = load_playlist(playlist_path)
     if not pl:
-        return 0, 0
+        return 0, 0, 0, []
 
     playlist_name = pl.get("name", playlist_path.stem)
     if args.remove_videos_suffix and playlist_name.lower().endswith("-videos"):
@@ -211,6 +232,7 @@ def process_playlist(
 
     urls_to_download: List[str] = []
     playlist_track_files: List[Path] = []
+    skipped_count = 0
 
     for t in pl.get("tracks", []):
         url = t.get("url")
@@ -231,7 +253,8 @@ def process_playlist(
         if vid not in downloaded_vids:
             urls_to_download.append(url)
         else:
-            log(f"Skipping duplicate track in '{playlist_name}': {url}")
+            log(f"Skipping duplicate track in '{playlist_name}': {t.get('title', url)}")
+            skipped_count += 1
             existing_path = downloaded_vids.get(vid)
             if existing_path:
                 playlist_track_files.append(existing_path)
@@ -240,11 +263,11 @@ def process_playlist(
         log(f"No new tracks to download in playlist: {playlist_name}")
         if args.write_m3u and playlist_track_files:
             write_m3u_for_playlist(out_root, playlist_name, playlist_track_files)
-        return 0, 0
+        return 0, 0, skipped_count, []
 
     log(f"Found {len(urls_to_download)} new tracks. Starting downloads with concurrency={args.concurrency}...")
 
-    failures: List[str] = []
+    failed_urls: List[str] = []
     with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
         futs = {
             ex.submit(
@@ -275,20 +298,20 @@ def process_playlist(
                 downloaded_vids[vid] = final_path
                 playlist_track_files.append(final_path)
             else:
-                failures.append(url)
+                failed_urls.append(url)
 
-    success_count = len(urls_to_download) - len(failures)
-    log(f"Playlist '{playlist_name}' summary: {success_count} downloaded, {len(failures)} failed.")
+    success_count = len(urls_to_download) - len(failed_urls)
+    log(f"Playlist '{playlist_name}' summary: {success_count} downloaded, {len(failed_urls)} failed, {skipped_count} skipped.")
 
-    if failures:
+    if failed_urls:
         eprint(f"  [FAILURES] for '{playlist_name}':")
-        for url in failures:
+        for url in failed_urls:
             eprint(f"    - {url}")
 
     if args.write_m3u and playlist_track_files:
         write_m3u_for_playlist(out_root, playlist_name, playlist_track_files)
 
-    return success_count, len(failures)
+    return success_count, len(failed_urls), skipped_count, failed_urls
 
 
 def main() -> int:
@@ -320,31 +343,56 @@ def main() -> int:
         eprint(f"[ERROR] Path not found: {takeout_path}")
         return 2
 
+    # Pre-scan the library to find tracks that have already been downloaded.
+    downloaded_vids = find_existing_downloads(out_root)
+
     json_paths = find_json_playlists(takeout_path)
     if not json_paths:
         eprint("No JSON playlist files found in the provided path.")
-        return 1
+        # Still exit 0 if we found existing files, as it's not an error.
+        return 0 if downloaded_vids else 1
 
     log(f"Found {len(json_paths)} JSON playlist(s) to process.")
     total_success = 0
     total_failures = 0
+    total_skipped = 0
+    all_failed_urls: List[str] = []
     # This dictionary tracks all downloaded video IDs and their file paths across all playlists
-    downloaded_vids: Dict[str, Path] = {}
+    # It is pre-populated by the scan above.
 
     for jp in json_paths:
-        s, f = process_playlist(jp, out_root, args, downloaded_vids)
+        s, f, sk, failed_urls = process_playlist(jp, out_root, args, downloaded_vids)
         total_success += s
         total_failures += f
+        total_skipped += sk
+        all_failed_urls.extend(failed_urls)
 
     log("\n" + "="*40)
-    if total_failures > 0:
-        eprint(f"\n[DONE] Completed with {total_failures} total failure(s).")
-    else:
-        log("\n[DONE] All downloads completed successfully.")
+    log("           DOWNLOAD SUMMARY")
+    log("="*40)
+    log(f"Total playlists processed: {len(json_paths)}")
     log(f"Total unique tracks downloaded: {total_success}")
+    log(f"Total tracks skipped (already exist): {total_skipped}")
+    log(f"Total failures: {total_failures}")
     log("="*40)
 
-    return 1 if total_failures > 0 else 0
+    if all_failed_urls:
+        failure_log_path = takeout_path / "failed_downloads.log"
+        try:
+            with failure_log_path.open("w", encoding="utf-8") as f:
+                f.write("# Failed Downloads\n\n")
+                f.write("The following URLs failed to download:\n")
+                for url in all_failed_urls:
+                    f.write(f"- {url}\n")
+            eprint(f"\n[INFO] A log of {total_failures} failed downloads was written to: {failure_log_path}")
+        except Exception as e:
+            eprint(f"\n[ERROR] Could not write failure log: {e}")
+        
+        eprint(f"\n[DONE] Completed with {total_failures} total failure(s).")
+        return 1
+    else:
+        log("\n[DONE] All downloads completed successfully.")
+        return 0
 
 
 if __name__ == "__main__":

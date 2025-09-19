@@ -168,6 +168,64 @@ def run_cmd(cmd: List[str]) -> Tuple[int, str, str]:
         eprint(f"[ERR] Failed to run command '{' '.join(cmd)}': {e}")
         return 1, "", str(e)
 
+# ----------------------------------------------------------------------------
+# Error classification helpers
+# ----------------------------------------------------------------------------
+
+# Precompiled lowercase regex patterns for performance
+_ERROR_PATTERNS: List[Tuple[str, List[str]]] = [
+    ("age_restricted", [r"age-restricted", r"sign in to confirm your age", r"this video is age restricted"]),
+    ("login_required", [r"please sign in", r"requires you to sign in", r"sign in to view this video"]),
+    ("private", [r"private video"]),
+    ("member_only", [r"members-only", r"channel memberships only"]),
+    ("region_block", [r"not available in your (country|region)", r"blocked in your country", r"made this video available in your country"]),
+    ("ratelimit", [r"http error 429", r"too many requests", r"rate limit"]),
+    ("unavailable", [r"video unavailable", r"this video is unavailable", r"unable to download video data", r"404 not found"]),
+]
+
+COOKIE_SUGGEST_CATEGORIES = {"age_restricted", "login_required", "private", "member_only"}
+VPN_SUGGEST_CATEGORIES = {"region_block"}
+
+def classify_error(stderr_text: str) -> str:
+    """Classify yt-dlp stderr text into a category string."""
+    if not stderr_text:
+        return "other"
+    s = stderr_text.lower()
+    for cat, patterns in _ERROR_PATTERNS:
+        for pat in patterns:
+            if re.search(pat, s):
+                return cat
+    return "other"
+
+def validate_cookies_file(cookies_path: Path) -> Tuple[bool, str]:
+    """Basic validation for a Netscape cookies.txt file (best-effort).
+    Returns (is_valid, message)."""
+    if not cookies_path.exists():
+        return False, f"Cookies file not found: {cookies_path}"
+    try:
+        lines = cookies_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except Exception as e:  # pragma: no cover - defensive
+        return False, f"Failed to read cookies file: {e}"
+    content_lines = [ln for ln in lines if ln.strip() and not ln.startswith("#")]
+    if not content_lines:
+        return False, "Cookies file is empty."
+    # Netscape format: 7 tab-separated columns. We'll validate at least some lines.
+    structured = [ln for ln in content_lines if len(ln.split("\t")) >= 7]
+    if not structured:
+        return False, "Cookies file does not appear to be in Netscape format (no tab-separated lines)."
+    # Look for at least one important YouTube auth cookie name
+    important = {"SAPISID", "__Secure-3PAPISID", "HSID", "SSID", "APISID"}
+    found_important = False
+    for ln in structured:
+        parts = ln.split("\t")
+        name = parts[5] if len(parts) >= 6 else ""
+        if name in important:
+            found_important = True
+            break
+    if not found_important:
+        return False, "Could not find expected YouTube auth cookies (e.g. SAPISID). Export may be incomplete."
+    return True, "Cookies file looks valid."
+
 def download_track(
     url: str,
     output_dir: Path,
@@ -179,7 +237,7 @@ def download_track(
     sleep: Optional[str],
     prefer_youtube_music: bool,
     dry_run: bool,
-) -> Tuple[bool, str, Optional[str], Optional[Path], Optional[str]]:
+) -> Tuple[bool, str, Optional[str], Optional[Path], Optional[str], Optional[str]]:
     """
     Downloads a single track.
     Returns (success, url, video_id, final_path, error_message).
@@ -208,8 +266,8 @@ def download_track(
     
     final_path = Path(final_path_str) if final_path_str and rc == 0 else None
     error_message = f"[yt-dlp stderr] {stderr}" if rc != 0 and stderr else None
-    
-    return rc == 0, url, vid, final_path, error_message
+    error_category: Optional[str] = classify_error(stderr) if rc != 0 and stderr else None
+    return rc == 0, url, vid, final_path, error_message, error_category
 
 def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[Path]) -> None:
     """Writes an M3U8 playlist file for a given list of tracks."""
@@ -236,6 +294,7 @@ def process_playlist(
     out_root: Path,
     args: argparse.Namespace,
     downloaded_vids: Dict[str, Path],
+    error_stats: Dict[str, int],
 ) -> Tuple[int, int, int, List[str]]:
     """
     Processes a single playlist file: loads tracks, downloads them, and reports results.
@@ -340,7 +399,7 @@ def process_playlist(
             return f"{m:02d}:{s:02d}"
 
         for f in iterator:
-            ok, url, vid, final_path, error_message = f.result()
+            ok, url, vid, final_path, error_message, error_category = f.result()
             if ok and vid and final_path:
                 success_count_so_far += 1
                 downloaded_vids[vid] = final_path
@@ -354,6 +413,8 @@ def process_playlist(
                 failed_count += 1
                 if error_message:
                     download_errors.append(error_message)
+                if error_category:
+                    error_stats[error_category] = error_stats.get(error_category, 0) + 1
 
             if tqdm:
                 processed = success_count_so_far + failed_count
@@ -391,6 +452,12 @@ def process_playlist(
 
     if args.write_m3u and playlist_track_files:
         write_m3u_for_playlist(out_root, playlist_name, playlist_track_files)
+
+    # Playlist-level guidance (only if there were failures)
+    if failed_urls and any(error_stats.get(cat, 0) for cat in COOKIE_SUGGEST_CATEGORIES):
+        eprint("  [HINT] Some failures look like restricted content. Provide cookies to access them: docs/COOKIES.md")
+    if failed_urls and any(error_stats.get(cat, 0) for cat in VPN_SUGGEST_CATEGORIES):
+        eprint("  [HINT] Some videos appear region-blocked. Try a VPN (different region) and/or cookies.")
 
     return success_count, len(failed_urls), skipped_count, failed_urls
 
@@ -430,6 +497,14 @@ def main() -> int:
     # Pre-scan the library to find tracks that have already been downloaded.
     downloaded_vids = find_existing_downloads(out_root)
 
+    # Validate cookies early (if provided)
+    if args.cookies:
+        valid, msg = validate_cookies_file(Path(args.cookies))
+        if valid:
+            log(f"[COOKIES] {msg}")
+        else:
+            eprint(f"[COOKIES] {msg}\n          See docs/COOKIES.md for help: https://github.com/WarreTh/ymde/blob/main/docs/COOKIES.md")
+
     json_paths = find_json_playlists(takeout_path)
     if not json_paths:
         eprint("No JSON playlist files found in the provided path.")
@@ -441,11 +516,12 @@ def main() -> int:
     total_failures = 0
     total_skipped = 0
     all_failed_urls: List[str] = []
+    aggregate_error_stats: Dict[str, int] = {}
     # This dictionary tracks all downloaded video IDs and their file paths across all playlists
     # It is pre-populated by the scan above.
 
     for jp in json_paths:
-        s, f, sk, failed_urls = process_playlist(jp, out_root, args, downloaded_vids)
+        s, f, sk, failed_urls = process_playlist(jp, out_root, args, downloaded_vids, aggregate_error_stats)
         total_success += s
         total_failures += f
         total_skipped += sk
@@ -471,6 +547,16 @@ def main() -> int:
             eprint(f"\n[INFO] A log of {total_failures} failed downloads was written to: {failure_log_path}")
         except Exception as e:
             eprint(f"\n[ERROR] Could not write failure log: {e}")
+
+        # Post-run guidance based on aggregated error categories
+        if any(aggregate_error_stats.get(cat, 0) for cat in COOKIE_SUGGEST_CATEGORIES) and not args.cookies:
+            eprint("\n[GUIDE] Several failures look restricted (age/private/member). Provide cookies: docs/COOKIES.md\n        GitHub guide: https://github.com/WarreTh/ymde/blob/main/docs/COOKIES.md")
+        if any(aggregate_error_stats.get(cat, 0) for cat in VPN_SUGGEST_CATEGORIES):
+            eprint("\n[GUIDE] Region-blocked videos detected. Consider using a VPN (different country) plus cookies.")
+        # If over half failures are unavailable/region issues suggest VPN/cookies
+        restricted_failures = sum(aggregate_error_stats.get(cat, 0) for cat in (COOKIE_SUGGEST_CATEGORIES | VPN_SUGGEST_CATEGORIES))
+        if total_failures and restricted_failures / max(1, total_failures) > 0.5:
+            eprint("\n[ADVICE] More than half of failures were restricted or region-blocked. Cookies and/or VPN very likely required.")
 
         eprint(f"\n[DONE] Completed with {total_failures} total failure(s).")
         return 1

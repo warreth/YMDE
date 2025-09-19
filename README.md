@@ -1,5 +1,7 @@
 # YMDE: YouTube Music Downloader & Exporter
 
+> **Enjoying YMDE? Please consider [starring the project on GitHub](https://github.com/WarreTh/ymde/stargazers)! Your support helps the project grow.**
+
 YMDE is a simple tool for downloading your music from YouTube and organizing it into a clean, tagged library suitable for media servers like Jellyfin or Plex.
 
 It scans your Google Takeout playlists (both JSON and CSV), downloads the audio for each track, and saves it into a structured folder format.
@@ -9,7 +11,7 @@ It scans your Google Takeout playlists (both JSON and CSV), downloads the audio 
 ## Features
 
 - **Google Takeout Support**: Directly processes playlists from your YouTube Music data.
-- **Fully supports importing into jellyfin**
+- **Fully supports importing into jellyfin and possibly other musiclibrary's**
 - **CSV Conversion**: Automatically converts `.csv` playlists into the required format.
 - **Efficient Downloading**: Uses `yt-dlp` for reliable downloads with parallel processing.
 - **Organized Library**: Saves files as `Playlist Name/Title [VideoID].ext`.

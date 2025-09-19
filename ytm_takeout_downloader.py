@@ -4,27 +4,45 @@ import json
 import re
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Conditional import of tqdm for progress bars
-try:
-    from tqdm import tqdm
-except ImportError:
-    tqdm = None
+"""YouTube Music Takeout Downloader.
+
+Simplified logging: normal output to stdout, warnings/errors to stderr.
+Use -v/--verbose for extra per-track skip information.
+"""
+
+###############################################################################
+# Logging Setup
+###############################################################################
+
+VERBOSE = False  # Set in main() based on --verbose flag
+
+# Conditional import of tqdm for progress bars (optional dependency)
+try:  # noqa: SIM105
+    from tqdm import tqdm  # type: ignore
+except Exception:
+    tqdm = None  # type: ignore
 
 def log(msg: str) -> None:
-    """Prints a message to standard output."""
+    """Print a normal progress/info message."""
     print(msg, flush=True)
 
+def vlog(msg: str) -> None:
+    """Print a verbose-only message."""
+    if VERBOSE:
+        print(msg, flush=True)
+
 def eprint(msg: str) -> None:
-    """Prints a message to standard error."""
+    """Print a warning/error style message to stderr."""
     print(msg, file=sys.stderr, flush=True)
 
 def find_existing_downloads(library_root: Path) -> Dict[str, Path]:
     """Scans the library for existing files and maps video IDs to their paths."""
-    log("Scanning library for existing downloads...")
+    vlog("Scanning library for existing downloads...")
     vids: Dict[str, Path] = {}
     # Regex to find the 11-char ID in brackets just before the extension
     id_re = re.compile(r"\[([A-Za-z0-9_-]{11})\]\.[^.]+$")
@@ -137,19 +155,18 @@ def build_ytdlp_cmd(
     cmd.append(u)
     return cmd
 
-def run_cmd(cmd: List[str]) -> Tuple[int, str]:
+def run_cmd(cmd: List[str]) -> Tuple[int, str, str]:
     """Executes a command, capturing its output and return code."""
     try:
         proc = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8")
-        if proc.returncode != 0:
-            eprint(f"[yt-dlp stderr] {proc.stderr.strip()}")
-        return proc.returncode, proc.stdout.strip()
+        # The caller is responsible for logging stderr
+        return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
     except FileNotFoundError:
         eprint("yt-dlp not found. Make sure it is installed and in your PATH.")
-        return 127, ""
+        return 127, "", "yt-dlp not found"
     except Exception as e:
         eprint(f"[ERR] Failed to run command '{' '.join(cmd)}': {e}")
-        return 1, ""
+        return 1, "", str(e)
 
 def download_track(
     url: str,
@@ -162,8 +179,11 @@ def download_track(
     sleep: Optional[str],
     prefer_youtube_music: bool,
     dry_run: bool,
-) -> Tuple[bool, str, Optional[str], Optional[Path]]:
-    """Downloads a single track and returns its success status and final path."""
+) -> Tuple[bool, str, Optional[str], Optional[Path], Optional[str]]:
+    """
+    Downloads a single track.
+    Returns (success, url, video_id, final_path, error_message).
+    """
     # Use yt-dlp's output template for naming. Using the video ID in the filename
     # helps with deduplication and lookups.
     outtmpl = str(
@@ -183,12 +203,13 @@ def download_track(
         prefer_music=prefer_youtube_music,
         dry_run=dry_run,
     )
-    rc, final_path_str = run_cmd(cmd)
+    rc, final_path_str, stderr = run_cmd(cmd)
     vid = get_video_id(url)
     
     final_path = Path(final_path_str) if final_path_str and rc == 0 else None
+    error_message = f"[yt-dlp stderr] {stderr}" if rc != 0 and stderr else None
     
-    return rc == 0, url, vid, final_path
+    return rc == 0, url, vid, final_path, error_message
 
 def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[Path]) -> None:
     """Writes an M3U8 playlist file for a given list of tracks."""
@@ -206,7 +227,7 @@ def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[P
                 rel_path = p.relative_to(library_root)
                 f.write(f"{rel_path.as_posix()}\n")
 
-        log(f"[M3U] Wrote playlist: {m3u_path}")
+        vlog(f"[M3U] Wrote playlist: {m3u_path}")
     except Exception as e:
         eprint(f"[WARN] Failed to write M3U playlist {m3u_path}: {e}")
 
@@ -247,17 +268,20 @@ def process_playlist(
             vid = get_video_id(url)
 
         if not (url and vid):
-            log(f"Skipping track with missing URL or videoId: {t.get('title', 'Unknown')}")
+            vlog(f"Skipping track with missing URL or videoId: {t.get('title', 'Unknown')}")
             continue
 
         if vid not in downloaded_vids:
             urls_to_download.append(url)
         else:
-            log(f"Skipping duplicate track in '{playlist_name}': {t.get('title', url)}")
+            vlog(f"Skipping duplicate track in '{playlist_name}': {t.get('title', url)}")
             skipped_count += 1
             existing_path = downloaded_vids.get(vid)
             if existing_path:
                 playlist_track_files.append(existing_path)
+
+    if skipped_count > 0 and not VERBOSE:
+        log(f"Skipped {skipped_count} tracks that already exist.")
 
     if not urls_to_download:
         log(f"No new tracks to download in playlist: {playlist_name}")
@@ -268,6 +292,7 @@ def process_playlist(
     log(f"Found {len(urls_to_download)} new tracks. Starting downloads with concurrency={args.concurrency}...")
 
     failed_urls: List[str] = []
+    download_errors: List[str] = []
     with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
         futs = {
             ex.submit(
@@ -288,17 +313,73 @@ def process_playlist(
 
         # Add a progress bar if tqdm is installed
         iterator = as_completed(futs)
+        start_time = time.time()
+        downloaded_bytes = 0
+        success_count_so_far = 0
         if tqdm:
             desc = f"Downloading '{playlist_name}'"
-            iterator = tqdm(iterator, total=len(futs), desc=desc, unit="song", leave=False)
+            # Custom bar format: show n/total and postfix (ETA + failures)
+            bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{postfix}]"
+            pbar = tqdm(iterator, total=len(futs), desc=desc, unit="song", leave=True, bar_format=bar_format)
+            pbar.set_postfix_str("ETA --:-- | failed: 0")
+            iterator = pbar
+
+        failed_count = 0
+        total_tasks = len(futs)
+
+        def _fmt_eta(seconds: float) -> str:
+            if seconds < 0 or seconds == float('inf'):
+                return "--:--"
+            if seconds >= 3600:
+                h = int(seconds // 3600)
+                m = int((seconds % 3600) // 60)
+                s = int(seconds % 60)
+                return f"{h:d}:{m:02d}:{s:02d}"
+            m = int(seconds // 60)
+            s = int(seconds % 60)
+            return f"{m:02d}:{s:02d}"
 
         for f in iterator:
-            ok, url, vid, final_path = f.result()
+            ok, url, vid, final_path, error_message = f.result()
             if ok and vid and final_path:
+                success_count_so_far += 1
                 downloaded_vids[vid] = final_path
                 playlist_track_files.append(final_path)
+                try:
+                    downloaded_bytes += final_path.stat().st_size
+                except Exception:
+                    pass
             else:
                 failed_urls.append(url)
+                failed_count += 1
+                if error_message:
+                    download_errors.append(error_message)
+
+            if tqdm:
+                processed = success_count_so_far + failed_count
+                remaining = total_tasks - processed
+                elapsed = time.time() - start_time
+                # Time-based ETA
+                eta_time = (elapsed / processed * remaining) if processed else float('inf')
+                # Size/throughput-based ETA (if at least one success and bytes tracked)
+                if success_count_so_far > 0 and downloaded_bytes > 0 and elapsed > 0:
+                    avg_speed = downloaded_bytes / elapsed  # bytes per second
+                    avg_size_per_track = downloaded_bytes / success_count_so_far
+                    remaining_bytes = avg_size_per_track * remaining
+                    if avg_speed > 0:
+                        eta_size = remaining_bytes / avg_speed
+                        # Blend: prefer size-based but fall back to time-based if wildly off
+                        eta = min(max(eta_size, 0), eta_time * 3) if processed > 1 else eta_size
+                    else:
+                        eta = eta_time
+                else:
+                    eta = eta_time
+                pbar.set_postfix_str(f"ETA {_fmt_eta(eta)} | failed: {failed_count}")
+
+    # After the progress bar is finished, print any errors that occurred.
+    if download_errors:
+        for err in download_errors:
+            eprint(err)
 
     success_count = len(urls_to_download) - len(failed_urls)
     log(f"Playlist '{playlist_name}' summary: {success_count} downloaded, {len(failed_urls)} failed, {skipped_count} skipped.")
@@ -332,8 +413,11 @@ def main() -> int:
     ap.add_argument("--cookies", help="Path to a cookies.txt file (Netscape format) for private/gated content.")
     ap.add_argument("--dry-run", action="store_true", help="Simulate the process without downloading any files.")
     ap.add_argument("--remove-videos-suffix", action="store_true", help="Remove '-videos' suffix from playlist names.")
+    ap.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output, e.g., for skipped tracks.")
 
     args = ap.parse_args()
+    global VERBOSE
+    VERBOSE = args.verbose
 
     takeout_path = Path(args.takeout_path).resolve()
     out_root = Path(args.output_dir).resolve()
@@ -387,7 +471,7 @@ def main() -> int:
             eprint(f"\n[INFO] A log of {total_failures} failed downloads was written to: {failure_log_path}")
         except Exception as e:
             eprint(f"\n[ERROR] Could not write failure log: {e}")
-        
+
         eprint(f"\n[DONE] Completed with {total_failures} total failure(s).")
         return 1
     else:

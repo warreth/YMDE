@@ -10,17 +10,13 @@ It scans your Google Takeout playlists (both JSON and CSV), downloads the audio 
 
 ## Features
 
-- **Google Takeout Support**: Directly processes playlists from your YouTube Music data.
-- **Fully supports importing into jellyfin and possibly other musiclibrary's**
-- **CSV Conversion**: Automatically converts `.csv` playlists into the required format.
-- **Efficient Downloading**: Uses `yt-dlp` for reliable downloads with parallel processing.
-- **Organized Library**: Saves files as `Playlist Name/Title [VideoID].ext`.
-- **Clean Metadata**: Automatically cleans track titles for display in media players (e.g., removes `[Official Video]`).
-- **Metadata & Thumbnails**: Embeds metadata and video thumbnails into audio files.
-- **M3U Playlists**: Optionally generates `.m3u8` playlists in the root of your library folder.
-- **Smart Deduplication**: Scans your entire library on startup to prevent re-downloading tracks that already exist in *any* playlist.
-- **Detailed Reporting**: Provides a final summary of downloaded, skipped, and failed tracks after each run.
-- **Failure Logging**: Creates a `failed_downloads.log` file in your `data` folder if any tracks fail to download.
+- **Process Google Takeout**: Directly handles `JSON` and `CSV` playlists from your YouTube Music export.
+- **Optimized for Media Servers**: Creates a clean library structure compatible with Jellyfin, Plex, and others.
+- **Parallel Downloads**: Uses `yt-dlp` with multiple concurrent downloads for speed.
+- **Embedded Metadata & Thumbnails**: Automatically tags audio files with track info and cover art.
+- **Automatic Playlist Generation**: Creates `.m3u8` playlist files for easy importing.
+- **Smart Deduplication**: Avoids re-downloading tracks that already exist anywhere in your library.
+- **Automatic Title Cleaning**: Removes clutter like `(Official Video)` from track titles.
 
 ## Get Started
 

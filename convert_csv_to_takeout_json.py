@@ -10,8 +10,19 @@ from typing import Any, Dict, Iterable, List, Optional
 # A regex to validate and extract an 11-character YouTube video ID.
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
+VERBOSE = False  # Set from CLI flag
+
+def log(msg: str) -> None:
+    """Print normal output to stdout."""
+    print(msg, flush=True)
+
+def vlog(msg: str) -> None:
+    """Print verbose-only output when --verbose is enabled."""
+    if VERBOSE:
+        print(msg, flush=True)
+
 def eprint(msg: str) -> None:
-    """Prints a message to standard error."""
+    """Print a message to standard error."""
     print(msg, file=sys.stderr, flush=True)
 
 def coerce_str(value: Any) -> Optional[str]:
@@ -59,7 +70,6 @@ def convert_csv_file(csv_path: Path, remove_suffix: bool) -> Optional[Path]:
     """
     try:
         with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
-            # Use DictReader to handle CSVs with headers
             reader = csv.DictReader(f)
             rows = list(reader)
     except Exception as e:
@@ -71,6 +81,7 @@ def convert_csv_file(csv_path: Path, remove_suffix: bool) -> Optional[Path]:
         return None
 
     tracks: List[Dict[str, Any]] = []
+    vlog(f"Parsing CSV: {csv_path.name} ({len(rows)} rows)")
     for i, row in enumerate(rows):
         video_id = extract_video_id(row)
         if not video_id:
@@ -105,7 +116,7 @@ def convert_csv_file(csv_path: Path, remove_suffix: bool) -> Optional[Path]:
     try:
         with out_path.open("w", encoding="utf-8") as f:
             json.dump(out_obj, f, ensure_ascii=False, indent=2)
-        print(f"[OK] Converted CSV -> JSON: {csv_path.name} -> {out_path.name} ({len(tracks)} tracks)")
+        log(f"[OK] Converted CSV -> JSON: {csv_path.name} -> {out_path.name} ({len(tracks)} tracks)")
         return out_path
     except Exception as e:
         eprint(f"[ERR] Failed to write JSON {out_path.name}: {e}")
@@ -119,7 +130,11 @@ def main() -> int:
     )
     parser.add_argument("base_path", nargs="?", default="/data", help="Directory to scan recursively for .csv files.")
     parser.add_argument("--remove-videos-suffix", action="store_true", help="Remove '-videos' suffix from playlist names.")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output.")
     args = parser.parse_args()
+
+    global VERBOSE
+    VERBOSE = args.verbose
 
     base = Path(args.base_path)
     if not base.is_dir():
@@ -128,17 +143,17 @@ def main() -> int:
 
     csv_files = sorted(list(base.rglob("*.csv")))
     if not csv_files:
-        print(f"[INFO] No CSV files found under {base}.")
+        log(f"[INFO] No CSV files found under {base}.")
         return 0
 
-    print(f"Found {len(csv_files)} CSV file(s) to process...")
+    log(f"Found {len(csv_files)} CSV file(s) to process...")
     count = 0
     for p in csv_files:
         if p.is_file():
             if convert_csv_file(p, args.remove_videos_suffix):
                 count += 1
 
-    print(f"[DONE] Successfully converted {count} of {len(csv_files)} CSV file(s).")
+    log(f"[DONE] Successfully converted {count} of {len(csv_files)} CSV file(s).")
     return 0
 
 if __name__ == "__main__":

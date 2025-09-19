@@ -138,6 +138,34 @@ For a seamless experience, you can map the output directory directly to your Jel
 
 This avoids any manual copying and keeps your library perfectly in sync.
 
+## FAQ
+
+### Why do I see "video unavailable" or "age-restricted" errors?
+
+This often happens when YouTube requires you to be logged in to view certain content (e.g., age-gated videos) or when a video is private or unavailable in your region.
+
+**Solution**: Use a `cookies.txt` file. By providing cookies from your logged-in YouTube session, YMDE can access these videos just like your browser.
+
+1. Export your cookies from your browser into a `cookies.txt` file. For detailed instructions, see the guide on [how to use cookies](/docs/COOKIES.md).
+2. Place the `cookies.txt` file in your `./data/` folder.
+3. Uncomment and set the `COOKIES` environment variable in your `compose.yml`:
+
+    ```yaml
+    environment:
+      # ...
+      - COOKIES=/data/cookies.txt
+    ```
+
+### How do I keep my library updated?
+
+You can run YMDE periodically to download new songs from your playlists. The tool automatically skips any tracks that are already in your library (even in different playlists), so it only downloads what's new.
+
+This is a great way to maintain a long-term archive of your music. Just re-run the same command whenever you want to sync:
+
+```bash
+docker compose run --rm ymde
+```
+
 ## Building the Image Manually
 
 If you prefer to build the Docker image locally instead of using a pre-built one from a registry:

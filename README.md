@@ -15,9 +15,12 @@ It scans your Google Takeout playlists (both JSON and CSV), downloads the audio 
 - **CSV Conversion**: Automatically converts `.csv` playlists into the required format.
 - **Efficient Downloading**: Uses `yt-dlp` for reliable downloads with parallel processing.
 - **Organized Library**: Saves files as `Playlist Name/Title [VideoID].ext`.
+- **Clean Metadata**: Automatically cleans track titles for display in media players (e.g., removes `[Official Video]`).
 - **Metadata & Thumbnails**: Embeds metadata and video thumbnails into audio files.
 - **M3U Playlists**: Optionally generates `.m3u8` playlists in the root of your library folder.
-- **Deduplication**: Prevents re-downloading tracks that already exist across all playlists.
+- **Smart Deduplication**: Scans your entire library on startup to prevent re-downloading tracks that already exist in *any* playlist.
+- **Detailed Reporting**: Provides a final summary of downloaded, skipped, and failed tracks after each run.
+- **Failure Logging**: Creates a `failed_downloads.log` file in your `data` folder if any tracks fail to download.
 
 ## Get Started
 
@@ -81,6 +84,8 @@ docker compose run --rm ymde
 ```
 
 Your music will appear in the `./library` directory, organized by playlist.
+
+At the end of the process, you will see a summary of how many tracks were downloaded, skipped, or failed.
 
 ## Configuration
 

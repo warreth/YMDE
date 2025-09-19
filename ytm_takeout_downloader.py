@@ -40,6 +40,43 @@ def eprint(msg: str) -> None:
     """Print a warning/error style message to stderr."""
     print(msg, file=sys.stderr, flush=True)
 
+def validate_cookies_file(cookies_path: Path) -> Tuple[bool, str]:
+    """Lightweight validation for a Netscape cookies.txt file.
+
+    Checks:
+    1. File exists and is not empty (ignoring comment lines).
+    2. At least one non-comment line has 7+ tab-separated fields.
+    3. Looks for at least one expected YouTube auth cookie name (heuristic).
+    """
+    if not cookies_path.exists():
+        return False, f"Cookies file not found: {cookies_path}"
+    try:
+        lines = cookies_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except Exception as e:  # Defensive: IO error
+        return False, f"Failed to read cookies file: {e}"
+
+    # Strip comments / blanks
+    content = [ln for ln in lines if ln.strip() and not ln.startswith("#")]
+    if not content:
+        return False, "Cookies file is empty (only comments or blank lines)."
+
+    structured = [ln for ln in content if len(ln.split("\t")) >= 7]
+    if not structured:
+        return False, "File does not look like Netscape format (no tab-separated records)."
+
+    important = {"SAPISID", "__Secure-3PAPISID", "HSID", "SSID", "APISID"}
+    found = False
+    for ln in structured:
+        parts = ln.split("\t")
+        # Netscape format: domain, flag, path, secure, expiration, name, value
+        name = parts[5] if len(parts) >= 6 else ""
+        if name in important:
+            found = True
+            break
+    if not found:
+        return False, "Could not find expected YouTube auth cookies (e.g., SAPISID)."
+    return True, "Cookies file looks OK."
+
 def find_existing_downloads(library_root: Path) -> Dict[str, Path]:
     """Scans the library for existing files and maps video IDs to their paths."""
     vlog("Scanning library for existing downloads...")
@@ -444,10 +481,13 @@ def main() -> int:
     # Pre-scan the library to find tracks that have already been downloaded.
     downloaded_vids = find_existing_downloads(out_root)
 
-    # (Optional) Basic cookies validation (lightweight) – keep simple to avoid false positives.
+    # Validate cookies file (non-fatal if invalid)
     if args.cookies:
-        if not Path(args.cookies).exists():
-            eprint(f"[WARN] Cookies file not found: {args.cookies}")
+        valid, msg = validate_cookies_file(Path(args.cookies))
+        if valid:
+            log(f"[COOKIES] {msg}")
+        else:
+            eprint(f"[COOKIES] {msg}")
 
     json_paths = find_json_playlists(takeout_path)
     if not json_paths:

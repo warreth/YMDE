@@ -89,6 +89,10 @@ def build_ytdlp_cmd(
         "--embed-metadata",
         "--embed-thumbnail",
         "--add-metadata",
+        # Parse the title from the infojson, remove anything in brackets, and use that for the metadata title.
+        # This gives a clean title in the media player while keeping the ID in the filename.
+        "--parse-metadata", "title:%(title)s",
+        "--parse-metadata", r'title:(?P<title>.+?)\s*\[.+\]',
         "--no-abort-on-error",
         "--no-overwrites",
         "--print", "after_move:filepath",

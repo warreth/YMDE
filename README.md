@@ -10,13 +10,14 @@ It scans your Google Takeout playlists (both JSON and CSV), downloads the audio 
 
 ## Features
 
-- **Process Google Takeout**: Directly handles `JSON` and `CSV` playlists from your YouTube Music export.
-- **Optimized for Media Servers**: Creates a clean library structure compatible with Jellyfin, Plex, and others.
-- **Parallel Downloads**: Uses `yt-dlp` with multiple concurrent downloads for speed.
-- **Embedded Metadata & Thumbnails**: Automatically tags audio files with track info and cover art.
-- **Automatic Playlist Generation**: Creates `.m3u8` playlist files for easy importing.
-- **Smart Deduplication**: Avoids re-downloading tracks that already exist anywhere in your library.
-- **Automatic Title Cleaning**: Removes clutter like `(Official Video)` from track titles.
+* **Process Google Takeout**: Directly handles `JSON` and `CSV` playlists from your YouTube Music export.
+* **Optimized for Media Servers**: Creates a clean library structure compatible with Jellyfin, Plex, and others.
+* **Parallel Downloads**: Uses `yt-dlp` with multiple concurrent downloads for speed.
+* **Embedded Metadata & Thumbnails**: Automatically tags audio files with track info and cover art.
+* **Automatic Playlist Generation**: Creates `.m3u8` playlist files for easy importing.
+* **Smart Deduplication**: Avoids re-downloading tracks that already exist anywhere in your library.
+* **Automatic Title Cleaning**: Removes clutter like `(Official Video)` from track titles.
+* **Optional Non-Music Trimming (SponsorBlock)**: Remove intros/outros/sponsor/selfpromo/misc segments using community data (enabled by default).
 
 ## Get Started
 
@@ -29,7 +30,7 @@ Create `data` and `library` folders in the same directory as the `compose.yml` f
 ```bash
 mkdir -p data library
 ```
-
+ 
 ### 2. Download Google Takeout Data
 
 **Quick Steps:**
@@ -63,12 +64,14 @@ services:
       - WRITE_M3U=1               # 1=Create M3U8 playlists, 0=disable
       - REMOVE_VIDEOS_SUFFIX=1    # 1=Remove "-videos" from playlist names, 0=disable
       - PREFER_YOUTUBE_MUSIC=1    # 1=Rewrite URLs to music.youtube.com for better metadata
+      - TRIM_NON_MUSIC=1          # 1=Trim non-music segments via SponsorBlock
       
       # --- Advanced Configuration ---
       # - RATE_LIMIT=1M             # Limit download speed (e.g., 500K, 1M).
       # - SLEEP="2,8"               # Sleep for a random 2-8 seconds between downloads.
       # - DRY_RUN=1                 # 1=Simulate without downloading, 0=disable
       # - COOKIES=/data/cookies.txt # Path to cookies file for private/gated content.
+      # - SPONSORBLOCK_CATEGORIES="sponsor,intro,outro" # Example overriding categories
 ```
 
 ### 4. Run the Downloader
@@ -95,6 +98,8 @@ All settings are managed through environment variables in your `compose.yml` fil
 | `WRITE_M3U`              | `1` to create `.m3u8` playlists in a `_playlists` folder.                                               | `1`         |
 | `REMOVE_VIDEOS_SUFFIX`   | `1` to change `My Playlist-videos` to `My Playlist`.                                                      | `1`         |
 | `PREFER_YOUTUBE_MUSIC`   | `1` to rewrite URLs to `music.youtube.com` for better metadata.                                           | `1`         |
+| `TRIM_NON_MUSIC`         | `1` to trim non-music segments (SponsorBlock).                                                            | `1`         |
+| `SPONSORBLOCK_CATEGORIES`| Override categories (comma list). Default when enabled: `sponsor,intro,outro,selfpromo,music_offtopic`   | ` `         |
 | `RATE_LIMIT`             | Download speed limit (e.g., `1M`). **Automatically set to `500K` if no cookies are used.**                | ` `         |
 | `SLEEP`                  | Delay between downloads. Fixed (`5`) or random range (`2,8`).                                           | ` `         |
 | `DRY_RUN`                | `1` to simulate the process without downloading files.                                                  | `0`         |

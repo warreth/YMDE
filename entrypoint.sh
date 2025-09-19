@@ -17,6 +17,8 @@ DRY_RUN="${DRY_RUN:-0}"
 COOKIES_PATH="${COOKIES:-}" # Use a different name to avoid conflict with the arg
 RATE_LIMIT_VAL="${RATE_LIMIT:-}" # Use a different name
 SLEEP_VAL="${SLEEP:-}" # Use a different name
+TRIM_NON_MUSIC="${TRIM_NON_MUSIC:-0}"
+SPONSORBLOCK_CATEGORIES="${SPONSORBLOCK_CATEGORIES:-}" # Optional custom list
 
 # 1. Convert CSVs to JSON
 # Build arguments for the conversion script
@@ -67,6 +69,12 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 if [[ "$REMOVE_VIDEOS_SUFFIX" == "1" ]]; then
   ARGS+=("--remove-videos-suffix")
+fi
+if [[ "$TRIM_NON_MUSIC" == "1" ]]; then
+  ARGS+=("--trim-non-music")
+  if [[ -n "$SPONSORBLOCK_CATEGORIES" ]]; then
+    ARGS+=("--sb-categories" "$SPONSORBLOCK_CATEGORIES")
+  fi
 fi
 
 # 3. Run the downloader

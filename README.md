@@ -18,6 +18,7 @@ It scans your Google Takeout playlists (both JSON and CSV), downloads the audio 
 * **Smart Deduplication**: Avoids re-downloading tracks that already exist anywhere in your library.
 * **Automatic Title Cleaning**: Removes clutter like `(Official Video)` from track titles.
 * **Optional Non-Music Trimming (SponsorBlock)**: Remove intros/outros/sponsor/selfpromo/misc segments using community data (enabled by default).
+* **Automatic Replacement Search**: If a track fails with a "video unavailable" error, YMDE can automatically search YouTube for a likely replacement and download it instead (enabled by default).
 
 ## Get Started
 
@@ -65,6 +66,7 @@ services:
       - REMOVE_VIDEOS_SUFFIX=1    # 1=Remove "-videos" from playlist names, 0=disable
       - PREFER_YOUTUBE_MUSIC=1    # 1=Rewrite URLs to music.youtube.com for better metadata
       - TRIM_NON_MUSIC=1          # 1=Trim non-music segments via SponsorBlock
+      - RETRY_SEARCH_IF_UNAVAILABLE=1 # 1=Search for replacement if original video is unavailable
       
       # --- Advanced Configuration ---
       # - RATE_LIMIT=1M             # Limit download speed (e.g., 500K, 1M).
@@ -99,6 +101,8 @@ All settings are managed through environment variables in your `compose.yml` fil
 | `REMOVE_VIDEOS_SUFFIX`   | `1` to change `My Playlist-videos` to `My Playlist`.                                                      | `1`         |
 | `PREFER_YOUTUBE_MUSIC`   | `1` to rewrite URLs to `music.youtube.com` for better metadata.                                           | `1`         |
 | `TRIM_NON_MUSIC`         | `1` to trim non-music segments (SponsorBlock).                                                            | `1`         |
+| `RETRY_SEARCH_IF_UNAVAILABLE` | `1` to auto-search & retry when a video is unavailable.                                           | `1`         |
+| `FALLBACK_MAX_RESULTS`    | Max search results considered for a replacement when unavailable.                                     | `6`         |
 | `SPONSORBLOCK_CATEGORIES`| Override categories (comma list). Default when enabled: `sponsor,intro,outro,selfpromo,music_offtopic`   | ` `         |
 | `RATE_LIMIT`             | Download speed limit (e.g., `1M`). **Automatically set to `500K` if no cookies are used.**                | ` `         |
 | `SLEEP`                  | Delay between downloads. Fixed (`5`) or random range (`2,8`).                                           | ` `         |

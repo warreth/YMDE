@@ -5,26 +5,18 @@ services:
     # Optional: uncomment to run as your host user (set UID/GID in a .env file)
     # user: "${UID:-1000}:${GID:-1000}"
     environment:
-      # Core paths (mounted below)
-      TAKEOUT_PATH: "/data"
-      OUTPUT_DIR: "/library"
-
-      # Downloader options
-      REMOVE_VIDEOS_SUFFIX: "1" # 1=remove "-videos" suffix from playlist names
-      AUDIO_FORMAT: "m4a" # m4a or mp3
-      QUALITY: "0" # 0=best; for mp3 use 0..9
-      CONCURRENCY: "2" # parallel downloads
-      WRITE_M3U: "1" # 1=also write M3U8 playlists
-      PREFER_YOUTUBE_MUSIC: "1" # 1=prefer music.youtube.com
-      TRIM_NON_MUSIC: "1" # 1=trim sponsor/intro/outro etc via SponsorBlock
-      SPONSORBLOCK_CATEGORIES: "" # Override categories (comma list) e.g. sponsor,intro,outro,selfpromo,music_offtopic
-      RATE_LIMIT: "" # e.g., 1M. Defaults to 500K if no cookies are used.
-      SLEEP: "1,3" # random sleep low,high seconds (empty to disable)
-      DRY_RUN: "0" # 1=dry-run
-      COOKIES: "/data/cookies.txt" # optional; file must exist if set
-
+      # --- Basic Configuration ---
+      - AUDIO_FORMAT=m4a # m4a or mp3
+      - QUALITY=0 # For MP3, VBR quality (0=best, 9=worst)
+      - CONCURRENCY=4 # Number of parallel downloads
+      - WRITE_M3U=1 # 1=Create M3U8 playlists, 0=disable
+      - REMOVE_VIDEOS_SUFFIX=1 # 1=Remove "-videos" from playlist names, 0=disable
+      - PREFER_YOUTUBE_MUSIC=1 # 1=Rewrite URLs to music.youtube.com for better metadata
+      - TRIM_NON_MUSIC=1 # 1=Trim non-music segments via SponsorBlock
+      - RETRY_SEARCH_IF_UNAVAILABLE=1 # 1=Search for replacement if original video is unavailable
+      - COOKIES="/data/cookies.txt"
     volumes:
       - ./data:/data
-      - ./library:/library
+      - /mnt/BackupHDD/music:/library
 
     restart: "no"

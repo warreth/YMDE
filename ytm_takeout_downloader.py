@@ -8,6 +8,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import shlex
+import math
 
 """YouTube Music Takeout Downloader.
 
@@ -225,10 +227,17 @@ def download_track(
     dry_run: bool,
     trim_non_music: bool,
     sb_categories: Optional[str],
+    retry_search_if_unavailable: bool,
+    original_title: Optional[str],
 ) -> Tuple[bool, str, Optional[str], Optional[Path], Optional[str]]:
-    """
-    Downloads a single track.
-    Returns (success, url, video_id, final_path, error_message).
+    """Download a single track with optional fallback search.
+
+    Returns (success, url_used, video_id, final_path, error_message).
+
+    If the initial download fails with an error containing 'unavailable' and
+    retry_search_if_unavailable is True, this function will perform a YouTube
+    search (via yt-dlp) using the original_title (if provided) or the URL's
+    extracted ID, then attempt to re-download the best-matching candidate.
     """
     # Use yt-dlp's output template for naming. Using the video ID in the filename
     # helps with deduplication and lookups.
@@ -256,7 +265,134 @@ def download_track(
     
     final_path = Path(final_path_str) if final_path_str and rc == 0 else None
     error_message = f"[yt-dlp stderr] {stderr}" if rc != 0 and stderr else None
+
+    # Fallback path: search for a replacement if unavailable
+    if (
+        not dry_run
+        and retry_search_if_unavailable
+        and rc != 0
+        and error_message
+        and "unavailable" in error_message.lower()
+    ):
+        vlog(f"[FALLBACK] '{original_title or url}' reported unavailable. Attempting search for replacement...")
+        replacement_url = search_for_replacement(
+            original_title=original_title,
+            failed_url=url,
+            cookies=cookies,
+            rate_limit=rate_limit,
+            sleep=sleep,
+            prefer_music=prefer_youtube_music,
+        )
+        if replacement_url and replacement_url != url:
+            vlog(f"[FALLBACK] Trying candidate: {replacement_url}")
+            cmd2 = build_ytdlp_cmd(
+                url=replacement_url,
+                outtmpl=outtmpl,
+                audio_format=audio_format,
+                audio_quality=audio_quality,
+                cookies=cookies,
+                rate_limit=rate_limit,
+                sleep=sleep,
+                prefer_music=prefer_youtube_music,
+                dry_run=dry_run,
+                trim_non_music=trim_non_music,
+                sb_categories=sb_categories,
+            )
+            rc2, fp2, stderr2 = run_cmd(cmd2)
+            if rc2 == 0 and fp2:
+                vlog(f"[FALLBACK] Replacement succeeded for '{original_title or url}'.")
+                vid2 = get_video_id(replacement_url)
+                return True, replacement_url, vid2, Path(fp2), None
+            else:
+                eprint(f"[FALLBACK-FAIL] Replacement attempt failed: {stderr2}")
+        else:
+            vlog("[FALLBACK] No viable replacement candidate found.")
     return rc == 0, url, vid, final_path, error_message
+
+def normalize_title_for_search(title: str) -> str:
+    """Normalize a title for searching: remove bracketed/parenthetical parts and excessive punctuation."""
+    # Remove content inside brackets or parentheses to generalize the query
+    cleaned = re.sub(r"\s*[\[(].*?[\])]", "", title)
+    cleaned = re.sub(r"[\t\n\r]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+def tokenize(s: str) -> List[str]:
+    """Tokenize a string into lowercase alphanumeric words for simple overlap scoring."""
+    return [w for w in re.split(r"[^a-z0-9]+", s.lower()) if w]
+
+def score_title_similarity(a: str, b: str) -> float:
+    """Compute a simple overlap score between two titles (Jaccard on token sets)."""
+    ta = set(tokenize(a))
+    tb = set(tokenize(b))
+    if not ta or not tb:
+        return 0.0
+    inter = len(ta & tb)
+    union = len(ta | tb)
+    return inter / union if union else 0.0
+
+def search_for_replacement(
+    original_title: Optional[str],
+    failed_url: str,
+    cookies: Optional[str],
+    rate_limit: Optional[str],
+    sleep: Optional[str],
+    prefer_music: bool,
+    max_results: int = 6,
+) -> Optional[str]:
+    """Search YouTube for a replacement video using yt-dlp JSON output.
+
+    Returns a full video URL or None if not found.
+    """
+    failed_vid = get_video_id(failed_url)
+    if not original_title and not failed_vid:
+        return None
+    query_title = original_title or failed_vid or ""
+    query_title = normalize_title_for_search(query_title)
+    if not query_title:
+        return None
+
+    search_term = f"ytsearch{max_results}:{query_title}"  # yt-dlp search expression
+    cmd: List[str] = ["yt-dlp", "-j", search_term]
+    # Add optional common flags
+    if cookies and Path(cookies).is_file():
+        cmd += ["--cookies", cookies]
+    if rate_limit:
+        cmd += ["--limit-rate", rate_limit]
+    _add_sleep_flags(cmd, sleep)
+
+    rc, stdout, stderr = run_cmd(cmd)
+    if rc != 0:
+        vlog(f"[FALLBACK] Search command failed: {stderr}")
+        return None
+    # Each line is JSON; parse individually.
+    candidates: List[Dict[str, Any]] = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            if isinstance(obj, dict) and obj.get("id") and obj.get("title"):
+                # Exclude the failed video id if present
+                if obj.get("id") == failed_vid:
+                    continue
+                candidates.append(obj)
+        except json.JSONDecodeError:
+            continue
+    if not candidates:
+        return None
+    # Rank candidates by similarity score to original title
+    if original_title:
+        for c in candidates:
+            c["_sim"] = score_title_similarity(original_title, c.get("title", ""))
+        candidates.sort(key=lambda x: x.get("_sim", 0.0), reverse=True)
+    best = candidates[0]
+    new_vid = best.get("id")
+    if not new_vid:
+        return None
+    base = "https://music.youtube.com/watch?v=" if prefer_music else "https://www.youtube.com/watch?v="
+    return f"{base}{new_vid}"
 
 def write_m3u_for_playlist(library_root: Path, playlist_name: str, files: List[Path]) -> None:
     """Writes an M3U8 playlist file for a given list of tracks."""
@@ -302,9 +438,13 @@ def process_playlist(
     playlist_track_files: List[Path] = []
     skipped_count = 0
 
+    # Map URL -> title for fallback search context
+    url_title_map: Dict[str, str] = {}
+
     for t in pl.get("tracks", []):
         url = t.get("url")
         vid = t.get("videoId")
+        title = t.get("title")
 
         # If we only have a videoId, construct the URL.
         if vid and not url:
@@ -320,6 +460,8 @@ def process_playlist(
 
         if vid not in downloaded_vids:
             urls_to_download.append(url)
+            if url and title:
+                url_title_map[url] = title
         else:
             vlog(f"Skipping duplicate track in '{playlist_name}': {t.get('title', url)}")
             skipped_count += 1
@@ -356,6 +498,8 @@ def process_playlist(
                 dry_run=args.dry_run,
                 trim_non_music=args.trim_non_music,
                 sb_categories=args.sb_categories,
+                retry_search_if_unavailable=args.retry_search_if_unavailable,
+                original_title=url_title_map.get(url),
             ): url
             for url in urls_to_download
         }
@@ -464,6 +608,7 @@ def main() -> int:
     ap.add_argument("--remove-videos-suffix", action="store_true", help="Remove '-videos' suffix from playlist names.")
     ap.add_argument("--trim-non-music", action="store_true", help="Trim non-music segments using SponsorBlock (requires network access to API via yt-dlp).")
     ap.add_argument("--sb-categories", help="Comma-separated SponsorBlock categories to remove. Default: sponsor,intro,outro,selfpromo,music_offtopic")
+    ap.add_argument("--retry-search-if-unavailable", action="store_true", help="On 'video unavailable' errors, search YouTube for a likely replacement and retry once.")
     ap.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output, e.g., for skipped tracks.")
 
     args = ap.parse_args()

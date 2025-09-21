@@ -19,6 +19,7 @@ RATE_LIMIT_VAL="${RATE_LIMIT:-}" # Use a different name
 SLEEP_VAL="${SLEEP:-}" # Use a different name
 TRIM_NON_MUSIC="${TRIM_NON_MUSIC:-0}"
 SPONSORBLOCK_CATEGORIES="${SPONSORBLOCK_CATEGORIES:-}" # Optional custom list
+RETRY_SEARCH_IF_UNAVAILABLE="${RETRY_SEARCH_IF_UNAVAILABLE:-1}" # Enable fallback search by default
 
 # 1. Convert CSVs to JSON
 # Build arguments for the conversion script
@@ -75,6 +76,9 @@ if [[ "$TRIM_NON_MUSIC" == "1" ]]; then
   if [[ -n "$SPONSORBLOCK_CATEGORIES" ]]; then
     ARGS+=("--sb-categories" "$SPONSORBLOCK_CATEGORIES")
   fi
+fi
+if [[ "$RETRY_SEARCH_IF_UNAVAILABLE" == "1" ]]; then
+  ARGS+=("--retry-search-if-unavailable")
 fi
 
 # 3. Run the downloader

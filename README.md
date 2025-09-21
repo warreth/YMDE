@@ -102,6 +102,7 @@ All settings are managed through environment variables in your `compose.yml` fil
 | `PREFER_YOUTUBE_MUSIC`   | `1` to rewrite URLs to `music.youtube.com` for better metadata.                                           | `1`         |
 | `TRIM_NON_MUSIC`         | `1` to trim non-music segments (SponsorBlock).                                                            | `1`         |
 | `RETRY_SEARCH_IF_UNAVAILABLE` | `1` to auto-search & retry when a video is unavailable.                                           | `1`         |
+| `FALLBACK_MAX_RESULTS`    | Max search results considered for a replacement when unavailable.                                     | `6`         |
 | `SPONSORBLOCK_CATEGORIES`| Override categories (comma list). Default when enabled: `sponsor,intro,outro,selfpromo,music_offtopic`   | ` `         |
 | `RATE_LIMIT`             | Download speed limit (e.g., `1M`). **Automatically set to `500K` if no cookies are used.**                | ` `         |
 | `SLEEP`                  | Delay between downloads. Fixed (`5`) or random range (`2,8`).                                           | ` `         |

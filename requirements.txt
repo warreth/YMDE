@@ -1,3 +1,4 @@
 yt-dlp>=2024.08.06
 mutagen>=1.47.0
 tqdm>=4.66.0
+requests>=2.31.0

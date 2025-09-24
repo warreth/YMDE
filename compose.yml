@@ -6,6 +6,7 @@ services:
     # user: "${UID:-1000}:${GID:-1000}"
     environment:
       # --- Basic Configuration ---
+      - MODE=takeout # 'takeout' for Google Takeout playlists, 'liked' for Liked Songs flow (mutually exclusive)
       - AUDIO_FORMAT=m4a # m4a or mp3
       - QUALITY=0 # For MP3, VBR quality (0=best, 9=worst)
       - CONCURRENCY=4 # Number of parallel downloads
@@ -15,6 +16,12 @@ services:
       - TRIM_NON_MUSIC=1 # 1=Trim non-music segments via SponsorBlock
       - RETRY_SEARCH_IF_UNAVAILABLE=1 # 1=Search for replacement if original video is unavailable
       - COOKIES="/data/cookies.txt"
+
+      # --- Liked Songs Mode ---
+      - LIKED_PLAYLIST_NAME=Liked Songs # Name used for the generated JSON playlist in liked mode
+      # Optional: After downloads, like all these tracks in Jellyfin by API
+      - JELLYFIN_URL=
+      - JELLYFIN_API_KEY=
     volumes:
       - ./data:/data
       - /mnt/BackupHDD/music:/library

@@ -11,21 +11,26 @@
 
 YMDE is a simple tool for downloading your music from YouTube and organizing it into a clean, tagged library suitable for media servers like Jellyfin or Plex.
 
-It scans your Google Takeout playlists (both JSON and CSV), downloads the audio for each track, and saves it into a structured folder format.
+It can either:
+
+- Process your Google Takeout playlists (JSON/CSV), or
+- Log in using your browser cookies to export your YouTube Music Liked Songs and download them.
+
+Both flows save audio into a structured, tagged library folder.
 
 **Disclaimer**: This tool is for personal, archival purposes only. Ensure your use complies with YouTube's Terms of Service and all applicable laws in your country.
 
 ## Features
 
-* **Process Google Takeout**: Directly handles `JSON` and `CSV` playlists from your YouTube Music export.
-* **Optimized for Media Servers**: Creates a clean library structure compatible with Jellyfin, Plex, and others.
-* **Parallel Downloads**: Uses `yt-dlp` with multiple concurrent downloads for speed.
-* **Embedded Metadata & Thumbnails**: Automatically tags audio files with track info and cover art.
-* **Automatic Playlist Generation**: Creates `.m3u8` playlist files for easy importing.
-* **Smart Deduplication**: Avoids re-downloading tracks that already exist anywhere in your library.
-* **Automatic Title Cleaning**: Removes clutter like `(Official Video)` from track titles.
-* **Optional Non-Music Trimming (SponsorBlock)**: Remove intros/outros/sponsor/selfpromo/misc segments using community data (enabled by default).
-* **Automatic Replacement Search**: If a track fails with a "video unavailable" error, YMDE can automatically search YouTube for a likely replacement and download it instead (enabled by default).
+- **Process Google Takeout**: Directly handles `JSON` and `CSV` playlists from your YouTube Music export.
+- **Optimized for Media Servers**: Creates a clean library structure compatible with Jellyfin, Plex, and others.
+- **Parallel Downloads**: Uses `yt-dlp` with multiple concurrent downloads for speed.
+- **Embedded Metadata & Thumbnails**: Automatically tags audio files with track info and cover art.
+- **Automatic Playlist Generation**: Creates `.m3u8` playlist files for easy importing.
+- **Smart Deduplication**: Avoids re-downloading tracks that already exist anywhere in your library.
+- **Automatic Title Cleaning**: Removes clutter like `(Official Video)` from track titles.
+- **Optional Non-Music Trimming (SponsorBlock)**: Remove intros/outros/sponsor/selfpromo/misc segments using community data (enabled by default).
+- **Automatic Replacement Search**: If a track fails with a "video unavailable" error, YMDE can automatically search YouTube for a likely replacement and download it instead (enabled by default).
 
 ## Get Started
 
@@ -65,7 +70,10 @@ services:
       - ./data:/data
       - ./library:/library
     environment:
-      # --- Basic Configuration ---
+  # --- Mode (mutually exclusive) ---
+  - MODE=takeout            # 'takeout' to process Takeout playlists, 'liked' for Liked Songs
+
+  # --- Basic Configuration ---
       - AUDIO_FORMAT=m4a          # m4a or mp3
       - QUALITY=0                 # For MP3, VBR quality (0=best, 9=worst)
       - CONCURRENCY=4             # Number of parallel downloads
@@ -75,7 +83,15 @@ services:
       - TRIM_NON_MUSIC=1          # 1=Trim non-music segments via SponsorBlock
       - RETRY_SEARCH_IF_UNAVAILABLE=1 # 1=Search for replacement if original video is unavailable
       
-      # --- Advanced Configuration ---
+  # --- Liked Songs options (MODE=liked) ---
+  - LIKED_PLAYLIST_NAME=Liked Songs   # Name for the generated liked JSON and playlist
+
+  # --- Jellyfin (optional) ---
+  # If set, YMDE will mark downloaded songs as Favorite in Jellyfin after download
+  - JELLYFIN_URL=              # e.g., http://localhost:8096
+  - JELLYFIN_API_KEY=          # Jellyfin API key
+
+  # --- Advanced Configuration ---
       # - RATE_LIMIT=1M             # Limit download speed (e.g., 500K, 1M).
       # - SLEEP="2,8"               # Sleep for a random 2-8 seconds between downloads.
       # - DRY_RUN=1                 # 1=Simulate without downloading, 0=disable
@@ -92,6 +108,21 @@ docker compose run --rm ymde
 ```
 
 Your music will appear in the `./library` directory, organized by playlist.
+
+## Choose your mode
+
+Set `MODE` to select exactly one flow:
+
+- MODE=takeout
+  - Put your Takeout JSON/CSV playlist files into `./data/`
+  - YMDE converts CSV to JSON and downloads everything using your settings.
+
+- MODE=liked
+  - Provide a `COOKIES=/data/cookies.txt` from your logged-in Google account (see COOKIES.md)
+  - YMDE exports your YouTube Music “Liked Songs” to `./data/.liked/Liked Songs.json`, downloads them, and (optionally) likes them in Jellyfin.
+
+These modes are mutually exclusive to keep behavior clear and predictable.
+
 
 At the end of the process, you will see a summary of how many tracks were downloaded, skipped, or failed.
 
@@ -115,6 +146,10 @@ All settings are managed through environment variables in your `compose.yml` fil
 | `SLEEP`                  | Delay between downloads. Fixed (`5`) or random range (`2,8`).                                           | ` `         |
 | `DRY_RUN`                | `1` to simulate the process without downloading files.                                                  | `0`         |
 | `COOKIES`                | Path to a `cookies.txt` file (Netscape format) for accessing private or age-gated content.              | ` `         |
+| `MODE`                   | Flow selector: `takeout` (Takeout playlists) or `liked` (YouTube Music Liked Songs).                   | `takeout`   |
+| `LIKED_PLAYLIST_NAME`    | Playlist name for the exported liked songs JSON (MODE=liked).                                         | `Liked Songs` |
+| `JELLYFIN_URL`           | Base URL to your Jellyfin server. If set with `JELLYFIN_API_KEY`, YMDE will mark downloaded songs as favorite. | ` `         |
+| `JELLYFIN_API_KEY`       | Jellyfin API key for the user to mark items as favorite.                                               | ` `         |
 
 ## Usage with Jellyfin
 

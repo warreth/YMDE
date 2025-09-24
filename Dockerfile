@@ -19,6 +19,8 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # Copy application code
 COPY ytm_takeout_downloader.py /app/ytm_takeout_downloader.py
 COPY convert_csv_to_takeout_json.py /app/convert_csv_to_takeout_json.py
+COPY ytm_liked_songs_exporter.py /app/ytm_liked_songs_exporter.py
+COPY jellyfin_like_from_library.py /app/jellyfin_like_from_library.py
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 

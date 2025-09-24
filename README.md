@@ -6,7 +6,6 @@
 ![Docker Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fipitio%2Fbackage%2Frefs%2Fheads%2Findex%2FWarreTh%2FYMDE%2F.json&query=%24%5B0%5D.downloads&label=Total%20Downloads&color=blue)
 ![Docker Daily Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fipitio%2Fbackage%2Frefs%2Fheads%2Findex%2FWarreTh%2FYMDE%2F.json&query=%24%5B0%5D.downloads_day&label=Dowloads%20(today)&color=teal)
 
-
 > **Enjoying YMDE? Please consider [starring the project on GitHub](https://github.com/WarreTh/ymde/stargazers)! Your support helps the project grow.**
 
 YMDE is a simple tool for downloading your music from YouTube and organizing it into a clean, tagged library suitable for media servers like Jellyfin or Plex.
@@ -34,97 +33,19 @@ Both flows save audio into a structured, tagged library folder.
 
 ## Get Started
 
-**Prerequisites**: You need Docker and Docker Compose installed.
+Pick one of these guides based on your workflow:
 
-### 1. Set Up Your Folders
-
-Create `data` and `library` folders in the same directory as the `compose.yml` file.
-
-```bash
-mkdir -p data library
-```
- 
-### 2. Download Google Takeout Data
-
-**Quick Steps:**
-
-1. Go to [Google Takeout](https://takeout.google.com/).
-2. **Uncheck all categories** except **"YouTube and YouTube Music"**.
-3. Click **"Multiple formats"** and set **History** to **JSON** or **CSV**.
-4. Click **"Next step"** and **request your data**.
-5. When your archive is ready, **download and extract it**.
-6. **Copy all `.csv` and `.json` files** from  
-   `Takeout/YouTube and YouTube Music/playlists/`  
-   into your local `./data/` folder.
-
-### 3. Create a `compose.yml` File
-
-Copy the example below and save it as `compose.yml`.
-
-```yaml
-services:
-  ymde:
-    image: ghcr.io/warreth/ymde:latest
-    container_name: ymde
-    volumes:
-      - ./data:/data
-      - ./library:/library
-    environment:
-  # --- Mode (mutually exclusive) ---
-  - MODE=takeout            # 'takeout' to process Takeout playlists, 'liked' for Liked Songs
-
-  # --- Basic Configuration ---
-      - AUDIO_FORMAT=m4a          # m4a or mp3
-      - QUALITY=0                 # For MP3, VBR quality (0=best, 9=worst)
-      - CONCURRENCY=4             # Number of parallel downloads
-      - WRITE_M3U=1               # 1=Create M3U8 playlists, 0=disable
-      - REMOVE_VIDEOS_SUFFIX=1    # 1=Remove "-videos" from playlist names, 0=disable
-      - PREFER_YOUTUBE_MUSIC=1    # 1=Rewrite URLs to music.youtube.com for better metadata
-      - TRIM_NON_MUSIC=1          # 1=Trim non-music segments via SponsorBlock
-      - RETRY_SEARCH_IF_UNAVAILABLE=1 # 1=Search for replacement if original video is unavailable
-      
-  # --- Liked Songs options (MODE=liked) ---
-  - LIKED_PLAYLIST_NAME=Liked Songs   # Name for the generated liked JSON and playlist
-
-  # --- Jellyfin (optional) ---
-  # If set, YMDE will mark downloaded songs as Favorite in Jellyfin after download
-  - JELLYFIN_URL=              # e.g., http://localhost:8096
-  - JELLYFIN_API_KEY=          # Jellyfin API key
-
-  # --- Advanced Configuration ---
-      # - RATE_LIMIT=1M             # Limit download speed (e.g., 500K, 1M).
-      # - SLEEP="2,8"               # Sleep for a random 2-8 seconds between downloads.
-      # - DRY_RUN=1                 # 1=Simulate without downloading, 0=disable
-      # - COOKIES=/data/cookies.txt # Path to cookies file for private/gated content.
-      # - SPONSORBLOCK_CATEGORIES="sponsor,intro,outro" # Example overriding categories
-```
-
-### 4. Run the Downloader
-
-Execute the downloader using Docker Compose. It will pull the image (if not local), run the process, and then exit.
-
-```bash
-docker compose run --rm ymde
-```
-
-Your music will appear in the `./library` directory, organized by playlist.
+- Get started with Google Takeout playlists: [GET_STARTED_TAKEOUT.md](docs/GET_STARTED_TAKEOUT.md)
+- Get started with Liked Songs: [GET_STARTED_LIKED.md](docs/GET_STARTED_LIKED.md)
 
 ## Choose your mode
 
 Set `MODE` to select exactly one flow:
 
-- MODE=takeout
-  - Put your Takeout JSON/CSV playlist files into `./data/`
-  - YMDE converts CSV to JSON and downloads everything using your settings.
+- `takeout`: read your Takeout playlists (JSON/CSV) and download.
+- `liked`: export YouTube Music “Liked Songs” using cookies and download; optionally auto-like in Jellyfin.
 
-- MODE=liked
-  - Provide a `COOKIES=/data/cookies.txt` from your logged-in Google account (see COOKIES.md)
-  - YMDE exports your YouTube Music “Liked Songs” to `./data/.liked/Liked Songs.json`, downloads them, and (optionally) likes them in Jellyfin.
-
-These modes are mutually exclusive to keep behavior clear and predictable.
-
-
-At the end of the process, you will see a summary of how many tracks were downloaded, skipped, or failed.
+At the end of the run, YMDE prints a summary of downloaded, skipped, and failed tracks.
 
 ## Configuration
 
@@ -148,6 +69,7 @@ All settings are managed through environment variables in your `compose.yml` fil
 | `COOKIES`                | Path to a `cookies.txt` file (Netscape format) for accessing private or age-gated content.              | ` `         |
 | `MODE`                   | Flow selector: `takeout` (Takeout playlists) or `liked` (YouTube Music Liked Songs).                   | `takeout`   |
 | `LIKED_PLAYLIST_NAME`    | Playlist name for the exported liked songs JSON (MODE=liked).                                         | `Liked Songs` |
+| `LIKED_CREATE_PLAYLIST`  | In liked mode, `1` to create an `.m3u8` playlist, `0` to skip creating a playlist.                    | `1`         |
 | `JELLYFIN_URL`           | Base URL to your Jellyfin server. If set with `JELLYFIN_API_KEY`, YMDE will mark downloaded songs as favorite. | ` `         |
 | `JELLYFIN_API_KEY`       | Jellyfin API key for the user to mark items as favorite.                                               | ` `         |
 

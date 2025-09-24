@@ -5,21 +5,24 @@ services:
     # Optional: uncomment to run as your host user (set UID/GID in a .env file)
     # user: "${UID:-1000}:${GID:-1000}"
     environment:
-      # --- Basic Configuration ---
+      # --- General Settings (apply to both modes) ---
       - MODE=takeout # 'takeout' for Google Takeout playlists, 'liked' for Liked Songs flow (mutually exclusive)
       - AUDIO_FORMAT=m4a # m4a or mp3
       - QUALITY=0 # For MP3, VBR quality (0=best, 9=worst)
       - CONCURRENCY=4 # Number of parallel downloads
-      - WRITE_M3U=1 # 1=Create M3U8 playlists, 0=disable
-      - REMOVE_VIDEOS_SUFFIX=1 # 1=Remove "-videos" from playlist names, 0=disable
+      - WRITE_M3U=1 # 1=Create M3U8 playlists (overridden by LIKED_CREATE_PLAYLIST in liked mode)
       - PREFER_YOUTUBE_MUSIC=1 # 1=Rewrite URLs to music.youtube.com for better metadata
       - TRIM_NON_MUSIC=1 # 1=Trim non-music segments via SponsorBlock
       - RETRY_SEARCH_IF_UNAVAILABLE=1 # 1=Search for replacement if original video is unavailable
-      - COOKIES="/data/cookies.txt"
+      - COOKIES="/data/cookies.txt" # Netscape cookies file; optional for Takeout, recommended for Liked
 
-      # --- Liked Songs Mode ---
+      # --- Takeout Mode Settings (MODE=takeout) ---
+      - REMOVE_VIDEOS_SUFFIX=1 # 1=Remove "-videos" from playlist names, 0=disable
+
+      # --- Liked Songs Mode Settings (MODE=liked) ---
       - LIKED_PLAYLIST_NAME=Liked Songs # Name used for the generated JSON playlist in liked mode
-      # Optional: After downloads, like all these tracks in Jellyfin by API
+      - LIKED_CREATE_PLAYLIST=1 # 1=Create an M3U8 for liked songs, 0=only download files (no playlist)
+      # After downloads, optionally like these tracks in Jellyfin via API
       - JELLYFIN_URL=
       - JELLYFIN_API_KEY=
     volumes:

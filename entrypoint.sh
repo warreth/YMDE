@@ -25,6 +25,7 @@ FALLBACK_MAX_RESULTS="${FALLBACK_MAX_RESULTS:-6}" # Number of search results to 
 # Mode selection: 'takeout' or 'liked' (mutually exclusive)
 MODE="${MODE:-takeout}"
 LIKED_PLAYLIST_NAME="${LIKED_PLAYLIST_NAME:-Liked Songs}"
+LIKED_CREATE_PLAYLIST="${LIKED_CREATE_PLAYLIST:-1}"
 JELLYFIN_URL="${JELLYFIN_URL:-}"
 JELLYFIN_API_KEY="${JELLYFIN_API_KEY:-}"
 
@@ -84,7 +85,12 @@ fi
 if [[ "$PREFER_YOUTUBE_MUSIC" == "1" ]]; then
   ARGS+=("--prefer-youtube-music")
 fi
-if [[ "$WRITE_M3U" == "1" ]]; then
+# M3U handling with liked-mode override
+WRITE_M3U_EFFECTIVE="$WRITE_M3U"
+if [[ "$MODE" == "liked" && "$LIKED_CREATE_PLAYLIST" == "0" ]]; then
+  WRITE_M3U_EFFECTIVE="0"
+fi
+if [[ "$WRITE_M3U_EFFECTIVE" == "1" ]]; then
   ARGS+=("--write-m3u")
 fi
 if [[ "$DRY_RUN" == "1" ]]; then

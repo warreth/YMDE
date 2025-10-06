@@ -1,11 +1,9 @@
 # YMDE: YouTube Music Downloader & Exporter
 
 <!-- Badges -->
-![GitHub Stars](https://img.shields.io/github/stars/WarreTh/YMDE?style=flat&color=yellow)
-![Release Build](https://github.com/WarreTh/ymde/actions/workflows/build-docker.yml/badge.svg)
-![Docker Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fipitio%2Fbackage%2Frefs%2Fheads%2Findex%2FWarreTh%2FYMDE%2F.json&query=%24%5B0%5D.downloads&label=Total%20Downloads&color=blue)
-![Docker Daily Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fipitio%2Fbackage%2Frefs%2Fheads%2Findex%2FWarreTh%2FYMDE%2F.json&query=%24%5B0%5D.downloads_day&label=Dowloads%20(today)&color=teal)
-
+![GitHub Stars](https://img.shields.io/github/stars/WarreTh/YMDE?style=flat&color=yellow&label=Stars)
+![Docker Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwarreth%2Fbackage%2Frefs%2Fheads%2Findex%2Fwarreth%2FYMDE%2Fymde.json&query=%24.downloads&label=Total%20Downloads%20&color=blue)
+![Docker Daily Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwarreth%2Fbackage%2Frefs%2Fheads%2Findex%2Fwarreth%2FYMDE%2Fymde.json&query=%24.downloads_day&label=Daily%20Downloads&color=teal)
 
 > **Enjoying YMDE? Please consider [starring the project on GitHub](https://github.com/WarreTh/ymde/stargazers)! Your support helps the project grow.**
 

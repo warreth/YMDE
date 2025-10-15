@@ -64,7 +64,7 @@ services:
       - ./library:/library
     environment:
       # --- Basic Configuration ---
-      - AUDIO_FORMAT=m4a          # m4a or mp3
+      - AUDIO_FORMAT=m4a          # one of [flac, alac, wav, aiff, opus, vorbis, aac, mp4a, mp3, ac4, eac3, ac3, dts]
       - QUALITY=0                 # For MP3, VBR quality (0=best, 9=worst)
       - CONCURRENCY=4             # Number of parallel downloads
       - WRITE_M3U=1               # 1=Create M3U8 playlists, 0=disable

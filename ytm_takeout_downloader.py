@@ -767,7 +767,7 @@ def main() -> int:
     )
     ap.add_argument("takeout_path", help="Path to folder containing Takeout JSON and/or CSV files.")
     ap.add_argument("-o", "--output-dir", default="/library", help="Output library directory.")
-    ap.add_argument("--audio-format", default="m4a", choices=["flac", "alac", "wav", "aiff", "opus", "vorbis", "aac", "mp4a", "mp3", "ac4", "eac3", "ac3", "dts"], help="Output audio format.")
+    ap.add_argument("--audio-format", default="mp4a", choices=["flac", "alac", "wav", "aiff", "opus", "vorbis", "aac", "mp4a", "mp3", "ac4", "eac3", "ac3", "dts"], help="Output audio format.")
     ap.add_argument("--quality", default="0", help="For MP3, VBR quality from 0 (best) to 9 (worst).")
     ap.add_argument("--concurrency", type=int, default=2, help="Number of parallel downloads.")
     ap.add_argument("--prefer-youtube-music", action="store_true", help="Rewrite video URLs to music.youtube.com for better metadata.")

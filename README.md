@@ -2,8 +2,8 @@
 
 <!-- Badges -->
 ![GitHub Stars](https://img.shields.io/github/stars/WarreTh/YMDE?style=flat&color=yellow&label=Stars)
-![Docker Downloads](https://img.shields.io/badge/dynamic/json?label=Total%20Downloads&url=https://ipitio.github.io/backage/warreth/YMDE/ymde.json&query=$.package.downloads&color=blue)
-![Docker Daily Downloads](https://img.shields.io/badge/dynamic/json?label=Daily%20Downloads&url=https://ipitio.github.io/backage/warreth/YMDE/ymde.json&query=$.package.downloads_day&color=teal)
+![Docker Downloads](https://img.shields.io/badge/dynamic/json?label=Total%20Downloads&url=https://ipitio.github.io/backage/warreth/YMDE/ymde.json&query=$.downloads&color=blue)
+![Docker Daily Downloads](https://img.shields.io/badge/dynamic/json?label=Daily%20Downloads&url=https://ipitio.github.io/backage/warreth/YMDE/ymde.json&query=$.downloads_day&color=teal)
 > **Enjoying YMDE? Please consider [starring the project on GitHub](https://github.com/WarreTh/ymde/stargazers)! Your support helps the project grow.**
 
 YMDE is a simple tool for downloading your music from YouTube and organizing it into a clean, tagged library suitable for media servers like Jellyfin or Plex.

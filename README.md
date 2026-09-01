@@ -1,3 +1,15 @@
+> [!WARNING]
+> **YMDE is archived and no longer actively maintained.**
+> 
+> Please check out its successor, [**MelodyBridge**](https://melodybridge.app) ([GitHub](https://github.com/warreth/melodybridge)).
+> 
+> **MelodyBridge features:**
+> - Spotify and YouTube playlist support
+> - Automatic downloads
+> - Importing into Jellyfin or `.m3u` playlists
+
+---
+
 # YMDE: YouTube Music Downloader & Exporter
 
 <!-- Badges -->
